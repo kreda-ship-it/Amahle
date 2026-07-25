@@ -4,6 +4,8 @@ node_modules/
 # Next.js
 .next/
 out/
+next-env.d.ts
+*.tsbuildinfo
 
 # Environment variables (never commit real keys)
 .env
@@ -12,6 +14,9 @@ out/
 
 # Supabase local dev
 .supabase/
+
+# Vercel
+.vercel
 
 # macOS
 .DS_Store
@@ -22,3 +27,5 @@ out/
 
 # Logs
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

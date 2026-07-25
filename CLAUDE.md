@@ -69,3 +69,5 @@ or defer it.
 Say so. Explain the tradeoff and give a recommendation. Don't silently comply
 with something you think is a mistake, and don't refuse — lay out the choice and
 let him decide.
+
+@AGENTS.md
