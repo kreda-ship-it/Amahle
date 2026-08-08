@@ -19,6 +19,22 @@ truth; this file is how you understand it.
 
 Every table has RLS enabled. Every query is scoped by `org_id`.
 
+**How the database knows your organization.** Two functions in Postgres, used by
+every policy:
+
+- `current_org_id()` — the org of the logged-in user, or null when logged out
+- `has_permission('some.key')` — true if their role holds that permission
+
+Both are `security definer`, which is what lets them read `profiles` without
+tripping `profiles`' own policy and recursing forever. See DECISIONS.md #16.
+
+**RLS hides rows. Grants hide columns.** A policy granting access to a row grants
+access to *every column* of it. Where a column must stay hidden — such as
+`organizations.private_settings` — that is a column-level `grant`, not a policy.
+
+**Nothing has DELETE.** No role is granted `delete` on any table. Soft-delete is
+enforced by the database, not by discipline. Deleting means updating `deleted_at`.
+
 **Two documented exceptions to the `org_id` rule:**
 
 - `organizations` has no `org_id` — it *is* the organization. Its own `id` is the
@@ -46,7 +62,15 @@ assume that.
 | `phone` | text | Public contact number |
 | `email` | text | Public contact email |
 | `address` | text | Street address |
-| `settings` | jsonb | Branding, colours, misc. config |
+| `public_settings` | jsonb | Branding, colours, public site config. **Readable by anyone on the internet** — the public website needs it before login. Never put secrets here. |
+| `private_settings` | jsonb | Internal config. Readable only by members of this organization. |
+
+Anonymous visitors can read this table, but only the columns listed above
+excluding `private_settings` — enforced by column-level grants, not by RLS.
+See DECISIONS.md #17.
+
+`slug` is deliberately not updatable through the API. Changing it breaks every
+URL pointing at that organization.
 
 ## profiles
 

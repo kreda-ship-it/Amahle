@@ -172,6 +172,38 @@ organizations. Correct eventually for a platform; premature now.
 logins. The migration is real but manageable: drop the unique index, add org
 context to the session.
 
+## 16. RLS resolves the current organization with a `security definer` function, not JWT claims — _2026-08-08_
+**Decision:** Two Postgres functions, `current_org_id()` and
+`has_permission(key)`, both `security definer` and `stable`. Every policy calls
+them. The organization and permission set are read from the database on each
+statement.
+**Why:** A policy that looks up `profiles` directly recurses forever, because
+reading `profiles` triggers `profiles`' own policy. `security definer` runs the
+function with its creator's privileges, skipping RLS on that read and breaking
+the loop. Reading live also means a role change takes effect on the very next
+query.
+**Alternative rejected:** Bake `org_id` and permissions into the JWT via a custom
+access token hook. Faster — no database lookup at all — but the claims go stale
+until the token refreshes, up to an hour. "I granted the permission and nothing
+happened" is a miserable bug to chase, and one salon with a handful of staff will
+never notice the lookup cost.
+**Revisit when:** Policy lookups show up as a real cost under real load. The
+switch replaces the two functions and leaves every policy untouched.
+
+## 17. `organizations.settings` split into public and private halves — _2026-08-08_
+**Decision:** `settings` became `public_settings`; `private_settings` was added
+alongside it. Anonymous visitors get column-level `select` on the public columns
+only.
+**Why:** The public website needs the salon's name, address and branding before
+anyone logs in, so `organizations` rows must be readable by logged-out visitors.
+RLS is row-level — a policy exposing the row exposes every column of it. A single
+`settings` blob would therefore have published anything ever stored in it. The
+split was done while the column was empty and the rename cost nothing.
+**Alternative rejected:** Keep one `settings` column and rely on a documented
+convention that nothing private goes in it. Conventions lose to deadlines.
+**Revisit when:** Never for the split itself. If a third category appears
+(per-employee config, say), it gets its own table rather than a third blob.
+
 ---
 
 ## Template for new entries
