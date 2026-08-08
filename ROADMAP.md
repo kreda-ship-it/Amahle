@@ -124,8 +124,10 @@ AI features
 
 ## After v1 — candidate order, not committed
 
-Notifications (SMS reminders) · CMS · basic revenue reporting · inventory ·
-second salon onboarding · analytics · everything else in the spec
+Notifications (SMS reminders) · **customer login via one-time code, so customers
+can see their own booking history** (DECISIONS #20) · CMS · basic revenue
+reporting · inventory · second salon onboarding · **platform admin area, built on
+the service role** (DECISIONS #19) · analytics · everything else in the spec
 
 Nothing here gets built until the salon has used v1 for real, for weeks.
 

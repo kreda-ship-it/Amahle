@@ -222,6 +222,63 @@ wrong destroys something unrecoverable, and by then the split has to already
 exist. This is the one entry in this file with a trigger that will arrive without
 announcing itself — watch for it.
 
+**When the split happens, the current project becomes prod and the new one
+becomes dev** — not the other way around. Moving real data between projects is
+slow and risky; standing up an empty dev is `link` plus `db push`. The deployed
+app's URL and keys also never change this way. Two conditions attach to it:
+rename the project from "Salon dev", since that name is the only warning label
+the database carries, and stop running experiments against it from the moment it
+holds real data — which is the same moment the new dev project gets created.
+
+## 19. Platform admin area deferred, and it will use the service role — _2026-08-08_
+**Decision:** No developer/operator area in v1 — no UI for adding organizations,
+no Amahle-level financial management. When it is built, it runs server-side with
+the Supabase **service role** rather than introducing a platform-level role into
+the tenant model.
+**Why:** Onboarding an organization is already one call to
+`create_organization()`. A UI saves minutes, once, and costs a page, a form,
+validation, and a permissions model to protect it. Amahle's own business finances
+are out of v1 twice over — financial management is on the forbidden list, and
+running the company is not the product.
+The architectural half matters more than the scheduling half: a platform operator
+belongs to *no* organization and must see *all* of them, while DECISIONS #15 says
+a profile belongs to exactly one and every RLS policy asks "what is your org?".
+Bolting a super-admin into the tenant model would weaken the isolation protecting
+every salon. The service role sidesteps RLS entirely and stays outside the model
+rather than inside it.
+**Alternative rejected:** A `is_platform_admin` flag on profiles, or a null
+`org_id` meaning "sees everything". Both make the tenant boundary conditional,
+and a conditional boundary is the kind that leaks.
+**Revisit when:** Onboarding organizations by hand becomes tedious — realistically
+the third or fourth salon.
+
+## 20. Customer accounts stay out of v1, and will use one-time codes when they come — _2026-08-08_
+**Decision:** v1 ships exactly as #8 describes — booking takes a name, phone, and
+optional email, and creates no login. When customer access is eventually built,
+it authenticates with a **one-time code** sent to the customer, never a password.
+**Why:** The question came up as "create the account automatically, and make the
+phone number the password." That cannot be built. A phone number is semi-public —
+people hand it out constantly — so it proves nothing about who is holding it, and
+using it as the password makes the customer list simultaneously a list of
+usernames and their passwords. Numbers in an area also follow predictable
+patterns, so an attacker needs no specific target.
+The disqualifying part is that the account would be created without the customer
+asking: someone books a haircut and now holds an account they do not know exists,
+with a password they never chose, guarding their allergies, sensitivities, and
+hair formulas. Any access to that is a breach involving people who never signed
+up for anything.
+A one-time code fixes the actual problem — it proves possession of the phone,
+which the number alone does not — and needs no password to choose, forget, reset,
+or leak.
+**Alternative rejected:** Phone number as password, auto-created at booking.
+Also rejected for v1: OTP accounts now. The customer records will already exist,
+so adding login later is additive rather than a rebuild, and a few weeks of real
+use will show whether anyone actually asks.
+**Revisit when:** Customers ask to see their own booking history — the same
+trigger as #8. Costs to weigh then: SMS is billed per message and every login is
+a message, while email codes are cheaper but `customers.email` is optional, so
+email-only login would exclude real customers.
+
 ---
 
 ## Template for new entries
