@@ -62,11 +62,12 @@ AI features
 - [x] SCHEMA.md written in plain English
 - [x] RLS enabled on every table
 - [x] RLS policies written and reviewed as a separate step
-- [ ] RLS tested: confirm a user from org A cannot read org B's rows — partially. Verified anonymous and role-based isolation; the two-organization test needs logins, so it lands in Phase 2.
+- [x] RLS tested: confirm a user from org A cannot read org B's rows — passed 1, 4, 4, 0. Re-runnable as `supabase/scripts/test-tenant-isolation.sql`; run it after adding any new table.
 - [x] Supabase CLI wired up, migrations replayable
 - [x] Permissions catalogue seeded
 - [x] `create_organization()` — canonical onboarding path
-- [x] Kedus organization created on dev
+- [x] `create_profile()` — canonical path to a login
+- [x] Kedus organization created on dev, with its first Owner
 - [ ] Remaining tables: employees, services, customers, appointments, audit_log
 - [ ] Seed data for the real salon (services, employees, hours)
 
