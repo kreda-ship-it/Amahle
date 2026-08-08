@@ -1,6 +1,6 @@
 # ROADMAP.md — Amahle
 
-Last updated: _[fill in date]_
+Last updated: 2026-08-08
 
 ---
 
@@ -41,8 +41,10 @@ AI features
 - Next.js (App Router), TypeScript, Tailwind
 - Supabase — Postgres, Auth, Row-Level Security
 - Vercel for deployment
-- Two Supabase projects: **dev** and **prod**. Never develop against live salon
-  data.
+- **One Supabase project for now** — "Salon dev". The dev/prod split is deferred,
+  not abandoned; the trigger for creating prod is the first real customer record.
+  When it happens, the current project becomes prod and the new one becomes dev.
+  See DECISIONS #18.
 
 ---
 
@@ -74,13 +76,17 @@ tables moved into the phases that use them — see the note below.
 - [x] `create_organization()` — canonical onboarding path
 - [x] `create_profile()` — canonical path to a login
 - [x] Kedus organization created on dev, with its first Owner
-- [ ] **`audit_log` table** — foundation, not a feature. See below.
-- [ ] **`create_organization()` and `create_profile()` write to `audit_log`**
+- [x] **`audit_log` table** — trigger-written, append-only, unforgeable
+- [x] **Every write to an audited table is logged** — including direct API updates, which no function-based approach would have caught
 
-**Why `audit_log` is still here.** DECISIONS #5 commits to an audit trail from day
-one, precisely because retrofitting one means retrofitting it into every write
-path in the app. There are two write paths today and neither logs anything. Two
-is a cheap number to fix. Ten is not.
+**Why `audit_log` was foundation and not a feature.** DECISIONS #5 commits to an
+audit trail from day one, precisely because retrofitting one means retrofitting
+it into every write path in the app. It was built while there were two write
+paths. Two is a cheap number to fix. Ten is not.
+
+Rows created before migration 006 — the Kedus organization, its roles, and the
+first Owner profile — are not in the log. Backfilling would mean inventing
+timestamps and actors.
 
 **Where the other tables went.** Each table now arrives with the feature that
 needs it, so its policies get written against a real use case instead of a

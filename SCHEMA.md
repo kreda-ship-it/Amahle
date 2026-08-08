@@ -247,19 +247,43 @@ online, which is the real measure of whether this project worked.
 
 ## audit_log
 
-Every meaningful action. Append-only. Never updated, never deleted.
+Every meaningful action. Append-only. Never updated, never deleted — no
+`updated_at`, no `deleted_at`.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `actor_id` | uuid, nullable | Who did it. Null for public booking. |
-| `action` | text | e.g. `appointment.created` |
+| `actor_id` | uuid, nullable | Which profile did it. Null for public booking, migrations, and service-role scripts — that null is meaningful, not missing. |
+| `action` | text | e.g. `appointment.created`, `organization.updated` |
 | `entity_type` | text | e.g. `appointment` |
 | `entity_id` | uuid | Which row |
-| `changes` | jsonb | Before/after for updates |
+| `changes` | jsonb | On insert, the whole new row under `after`. On update, only the keys that actually changed, each as `{from, to}`. |
 | `tier` | text | `critical` or `routine` |
-| `ip_address` | text | |
+| `ip_address` | text | Always null for now. Postgres sees Supabase's connection, not the caller's — the app must pass it in as a session setting, which lands with the Next.js work. |
 | `created_at` | timestamptz | |
 
 **Critical tier:** anything touching customer sensitive data, money, permissions,
 or deletions.
 **Routine tier:** ordinary operational actions.
+
+**Written by triggers, never by application code.** `audit_row()` is attached to
+each audited table and fires on every insert and update regardless of what caused
+it — API call, SQL editor, service-role script, or code neither of us has written
+yet. The RLS policies allow authenticated users to update these tables *directly*
+through the API with no function in the path, so anything relying on application
+code to log would be quietly incomplete.
+
+`audit_row()` is `security definer`. `audit_log` grants INSERT to nobody, which
+is what makes it unforgeable; without elevated privileges the audit insert would
+be denied and would take the user's legitimate update down with it.
+
+A soft delete is an update that sets `deleted_at`, and is recorded as
+`entity.deleted` at `critical` tier rather than as an update. An update that
+changes nothing but `updated_at` is not recorded at all.
+
+**Nothing can read it yet** — RLS is on with no policies and no grants. It
+collects data now and becomes readable when a screen needs it and earns an
+`audit.view` permission.
+
+Rows created before migration 006 — the Kedus organization, its roles, and the
+first Owner profile — do not appear. Backfilling would mean inventing timestamps
+and actors, which is the one thing an audit log must not contain.
