@@ -20,13 +20,24 @@ Newest entry at the top.
 
 ## 2026-08-08 — Multi-tenant foundation
 
-**Built:** Supabase CLI installed and linked to Salon dev. Five migrations:
+**Built:** Supabase CLI installed and linked to Salon dev. Six migrations:
 tenancy core (organizations, profiles, roles, permissions, role_permissions),
 access control (14 RLS policies, column-level grants, two `security definer`
 helper functions, `settings` split into public and private), the permissions
 catalogue plus `create_organization()`, timezone/currency moved to New York and
-USD, and `create_profile()`. Kedus Hair Salon and Braiding created on dev with
-its four system roles, and its first Owner profile. DECISIONS #14–20.
+USD, `create_profile()`, and `audit_log`. Kedus Hair Salon and Braiding created
+on dev with its four system roles, and its first Owner profile. DECISIONS #14–20.
+
+`audit_log` is written by triggers rather than by application code, because the
+RLS policies allow direct table updates through the API with no function in the
+path — a function-based approach would have been quietly incomplete. The trigger
+is `security definer` so it can write to a table that grants INSERT to nobody.
+Verified: a real edit logs one row containing only what changed; an edit that
+changes nothing logs nothing.
+
+Phase 1 was redefined mid-session. It was written as "the whole database"; it is
+now the multi-tenant foundation, with the remaining five tables moved into the
+phases that use them. Phase 1 is complete, 14 of 14.
 
 **Proven, not just written:** a second organization created inside a rolled-back
 transaction is invisible to the Kedus owner — 1, 4, 4, 0. The permissions chain
@@ -41,7 +52,11 @@ with the trigger recorded as the first real customer record. Remaining tables no
 built — employees, services, customers, appointments, audit_log. Docker isn't
 installed, so `supabase db dump` and local development don't work; not needed so
 far. Nothing in the Next.js app talks to Supabase yet — no environment variables,
-no client, no login page.
+no client, no login page. The Kedus row's phone and address still hold the
+original South African placeholders while `create-kedus-organization.sql` says
+the US ones, so the script no longer reproduces the row — one update statement
+fixes it. An unused throwaway auth user may exist in the dashboard; delete it if
+so.
 
 **Next:** Phase 2, the application half — environment variables, Supabase
 browser and server clients, the `/lib/auth` module, and a staff login page.
