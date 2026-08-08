@@ -56,20 +56,44 @@ AI features
 - [x] Next.js app scaffolded, running locally
 - [ ] Deployed to Vercel (placeholder page is fine)
 
-### Phase 1 — Database
-- [x] Schema migration written and reviewed line by line — tenancy core only (organizations, profiles, roles, permissions, role_permissions)
-- [x] Migration run on dev
+### Phase 1 — Multi-tenant foundation
+
+Redefined 2026-08-08. This phase was originally "the whole database." It is now
+the tenant boundary and the machinery every later table depends on. The remaining
+tables moved into the phases that use them — see the note below.
+
+- [x] Tenancy core: organizations, profiles, roles, permissions, role_permissions
+- [x] Migrations run on dev, replayable into a fresh project
 - [x] SCHEMA.md written in plain English
 - [x] RLS enabled on every table
 - [x] RLS policies written and reviewed as a separate step
-- [x] RLS tested: confirm a user from org A cannot read org B's rows — passed 1, 4, 4, 0. Re-runnable as `supabase/scripts/test-tenant-isolation.sql`; run it after adding any new table.
-- [x] Supabase CLI wired up, migrations replayable
+- [x] Column-level grants — RLS hides rows, grants hide columns
+- [x] RLS tested: a user from org A cannot read org B's rows — passed 1, 4, 4, 0. Re-runnable as `supabase/scripts/test-tenant-isolation.sql`
+- [x] Supabase CLI wired up
 - [x] Permissions catalogue seeded
 - [x] `create_organization()` — canonical onboarding path
 - [x] `create_profile()` — canonical path to a login
 - [x] Kedus organization created on dev, with its first Owner
-- [ ] Remaining tables: employees, services, customers, appointments, audit_log
-- [ ] Seed data for the real salon (services, employees, hours)
+- [ ] **`audit_log` table** — foundation, not a feature. See below.
+- [ ] **`create_organization()` and `create_profile()` write to `audit_log`**
+
+**Why `audit_log` is still here.** DECISIONS #5 commits to an audit trail from day
+one, precisely because retrofitting one means retrofitting it into every write
+path in the app. There are two write paths today and neither logs anything. Two
+is a cheap number to fix. Ten is not.
+
+**Where the other tables went.** Each table now arrives with the feature that
+needs it, so its policies get written against a real use case instead of a
+guessed one:
+
+| Table | Now in |
+|---|---|
+| `services`, `employees`, `employee_services` | Phase 3 |
+| `employee_working_hours`, `employee_time_off` | Phase 4 |
+| `customers`, `customer_flags`, `appointments` | Phase 4 |
+
+Run `test-tenant-isolation.sql` after adding any of them. If a new table is
+missing its policy, the counts stop matching and you find out immediately.
 
 ### Phase 2 — Auth
 - [ ] `/lib/auth` module: who is this, what may they do
@@ -79,6 +103,9 @@ AI features
 - [ ] Confirm nothing outside `/lib/auth` calls Supabase auth
 
 ### Phase 3 — Public website
+- [ ] **`services` table** + RLS policies (anonymous visitors read the bookable ones)
+- [ ] **`employees` and `employee_services` tables** + RLS policies
+- [ ] Seed the salon's real services, prices, and team
 - [ ] Homepage
 - [ ] Services and pricing page (driven from database)
 - [ ] Team page (driven from database)
@@ -89,6 +116,10 @@ AI features
 - [ ] Live at the salon's real domain
 
 ### Phase 4 — Booking
+- [ ] **`customers` and `customer_flags` tables** + RLS policies. Sensitive fields — allergies, sensitivities, formulas — so field-level permissions are designed here, against real screens
+- [ ] **`appointments` table** + RLS policies
+- [ ] **`employee_working_hours` and `employee_time_off` tables** — availability can't be computed without them
+- [ ] Seed the salon's working hours
 - [ ] `createAppointment()` — the one canonical creation path
 - [ ] Availability calculation (service duration, buffers, working hours)
 - [ ] Conflict detection
