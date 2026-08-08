@@ -49,20 +49,25 @@ AI features
 ## Phases
 
 ### Phase 0 — Foundation
-- [ ] Foundation docs in repo (PROJECT, CLAUDE, ROADMAP, DECISIONS, SCHEMA, GLOSSARY, SESSION_LOG, CHEATSHEET)
-- [ ] `git init`, GitHub repo created
-- [ ] Supabase dev project created
+- [x] Foundation docs in repo (PROJECT, CLAUDE, ROADMAP, DECISIONS, SCHEMA, GLOSSARY, SESSION_LOG, CHEATSHEET)
+- [x] `git init`, GitHub repo created
+- [x] Supabase dev project created
 - [ ] Supabase prod project created
-- [ ] Next.js app scaffolded, running locally
+- [x] Next.js app scaffolded, running locally
 - [ ] Deployed to Vercel (placeholder page is fine)
 
 ### Phase 1 — Database
-- [ ] Schema migration written and reviewed line by line
-- [ ] Migration run on dev
-- [ ] SCHEMA.md written in plain English
-- [ ] RLS enabled on every table
-- [ ] RLS policies written and reviewed as a separate step
-- [ ] RLS tested: confirm a user from org A cannot read org B's rows
+- [x] Schema migration written and reviewed line by line — tenancy core only (organizations, profiles, roles, permissions, role_permissions)
+- [x] Migration run on dev
+- [x] SCHEMA.md written in plain English
+- [x] RLS enabled on every table
+- [x] RLS policies written and reviewed as a separate step
+- [ ] RLS tested: confirm a user from org A cannot read org B's rows — partially. Verified anonymous and role-based isolation; the two-organization test needs logins, so it lands in Phase 2.
+- [x] Supabase CLI wired up, migrations replayable
+- [x] Permissions catalogue seeded
+- [x] `create_organization()` — canonical onboarding path
+- [x] Kedus organization created on dev
+- [ ] Remaining tables: employees, services, customers, appointments, audit_log
 - [ ] Seed data for the real salon (services, employees, hours)
 
 ### Phase 2 — Auth
