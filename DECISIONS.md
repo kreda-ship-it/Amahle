@@ -138,6 +138,40 @@ with near-zero configuration. All well-documented, which matters when learning.
 understand.
 **Revisit when:** Not in v1.
 
+## 14. `permissions` is global reference data, not per-organization — _2026-08-08_
+**Decision:** The `permissions` table has no `org_id`. It is a single shared
+catalogue of every action the software supports, readable by any authenticated
+user. This is a deliberate, documented exception to the "every table has
+`org_id`" rule in CLAUDE.md.
+**Why:** `permissions` describes what *the software* can do — `appointment.create`,
+`customer.view_financial`. It changes when we ship a feature, never when a salon
+changes its mind, and it is identical for every organization. It contains no
+tenant data: no customer names, no prices, no appointments. Nothing leaks if one
+organization can read all of it. The per-organization customization the product
+promises lives entirely in `role_permissions`, which *does* carry `org_id` — that
+is where "salon A's receptionist sees balances, salon B's does not" is expressed.
+**Alternative rejected:** Give `permissions` an `org_id` and copy the catalogue
+into every new organization. Rejected because it means every shipped feature
+requires inserting the new permission row into every organization, forever. One
+missed insert and that salon silently cannot use the feature — a failure mode
+that is invisible until a customer complains.
+**Revisit when:** If organizations ever need to define their own custom
+permission keys, rather than just choosing from ours. That would be a real
+product change, not a refactor.
+
+## 15. One login belongs to one organization — _2026-08-08_
+**Decision:** `profiles.user_id` is unique. A Supabase auth user maps to exactly
+one profile, in exactly one organization.
+**Why:** It keeps every permission check to a single lookup with no ambiguity
+about which organization the current request is acting inside. Multi-org logins
+would mean an org-switcher in the UI and an org context threaded through every
+query and RLS policy, for zero v1 benefit.
+**Alternative rejected:** Allow one auth user to hold profiles in several
+organizations. Correct eventually for a platform; premature now.
+**Revisit when:** Someone owns two salons on Amahle and objects to having two
+logins. The migration is real but manageable: drop the unique index, add org
+context to the session.
+
 ---
 
 ## Template for new entries

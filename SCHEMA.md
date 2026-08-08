@@ -19,6 +19,17 @@ truth; this file is how you understand it.
 
 Every table has RLS enabled. Every query is scoped by `org_id`.
 
+**Two documented exceptions to the `org_id` rule:**
+
+- `organizations` has no `org_id` — it *is* the organization. Its own `id` is the
+  tenant key everything else points at.
+- `permissions` has no `org_id` — it is a shared catalogue of what the software
+  can do, not tenant data. See DECISIONS.md #14. Per-organization customization
+  lives in `role_permissions`, which does carry `org_id`.
+
+`audit_log` carries `org_id` and `created_at` but no `updated_at` or
+`deleted_at`: it is append-only, so there is nothing to update or soft-delete.
+
 ---
 
 ## organizations
@@ -44,7 +55,7 @@ have profiles — they never log in.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `user_id` | uuid | Supabase auth user |
+| `user_id` | uuid | Supabase auth user. Unique — one login, one organization. See DECISIONS.md #15. |
 | `full_name` | text | |
 | `email` | text | |
 | `phone` | text | |
@@ -64,11 +75,14 @@ code.
 
 ## permissions
 
-Every distinct thing a person can do. Reference data.
+Every distinct thing a person can do. Reference data, shared by all
+organizations — **no `org_id`**, and no `updated_at` / `deleted_at`, because rows
+are added and changed by migration rather than by the application. See
+DECISIONS.md #14.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `key` | text | e.g. `appointment.create`, `customer.view_financial` |
+| `key` | text | e.g. `appointment.create`, `customer.view_financial`. Unique. |
 | `description` | text | Plain-English explanation |
 | `category` | text | Grouping for the permissions UI |
 
