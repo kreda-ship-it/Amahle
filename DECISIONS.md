@@ -204,6 +204,24 @@ convention that nothing private goes in it. Conventions lose to deadlines.
 **Revisit when:** Never for the split itself. If a third category appears
 (per-employee config, say), it gets its own table rather than a third blob.
 
+## 18. Prod Supabase project deferred — _2026-08-08_
+**Decision:** One Supabase project, "Salon dev", for now. The dev/prod split is
+postponed.
+**Why:** Both existing projects sit in one Supabase organization, and the free
+plan allows two — a third means paying roughly $25/month to hold an empty
+database months before anyone uses it. The migrations in this repo are the
+recipe: creating prod later is create project, link, `db push`, run the
+organization script with real details. Perhaps ten minutes.
+**Alternative rejected:** Create prod now for the confidence that the replay
+works. Real value, but the same confidence is available later and for free by
+replaying into a throwaway project and deleting it.
+**Revisit when:** **The first real customer record.** Not a date and not a phase.
+While the database holds only placeholder data it can be broken freely; the
+moment it holds a real person's phone number or allergy note, an experiment gone
+wrong destroys something unrecoverable, and by then the split has to already
+exist. This is the one entry in this file with a trigger that will arrive without
+announcing itself — watch for it.
+
 ---
 
 ## Template for new entries

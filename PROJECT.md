@@ -144,8 +144,18 @@ regardless of whether booking is finished.
 ## Stack
 
 Next.js (App Router), TypeScript, Tailwind, Supabase (Postgres, Auth, RLS),
-deployed on Vercel. Two Supabase projects: dev and prod. Development never runs
-against the salon's live data.
+deployed on Vercel.
+
+**One Supabase project for now — "Salon dev".** The eventual shape is still two
+projects, dev and prod, with development never touching the salon's live data.
+That split is deferred, not abandoned: a second project costs money on Supabase's
+plan limits, and there is no real data to protect yet.
+
+The trigger for creating prod is **the first real customer record** — not a date,
+and not a phase. Until then Salon dev holds placeholder data and can be broken
+freely. From the moment a real person's phone number or allergy note is in there,
+a careless migration destroys something that cannot be recovered, and the split
+must already exist. See DECISIONS.md #18.
 
 ## How we work
 

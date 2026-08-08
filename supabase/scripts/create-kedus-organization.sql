@@ -13,14 +13,27 @@
 --
 -- p_timezone and p_currency are NOT cosmetic. Every appointment time is
 -- interpreted against the timezone, so a wrong value makes every booking
--- wrong. Confirm both before real appointments exist.
+-- wrong. Migration 004 made both required parameters for this reason.
 
 select public.create_organization(
   p_name     => 'Kedus Hair Salon and Braiding',
   p_slug     => 'kedus-hair-salon',
-  p_timezone => 'Africa/Johannesburg',
-  p_currency => 'ZAR',
-  p_phone    => '+27 00 000 0000',
+  p_timezone => 'America/New_York',
+  p_currency => 'USD',
+  p_phone    => '+1 000 000 0000',
   p_email    => 'hello@example.com',
-  p_address  => '1 Example Street, Placeholder Suburb'
+  p_address  => '1 Example Street, Placeholder Town'
 );
+
+-- ------------------------------------------------------------
+-- Correction applied by hand on 2026-08-08.
+--
+-- The organization was originally created with Africa/Johannesburg and
+-- ZAR, from a guess made in migration 001. Corrected in the SQL editor
+-- before migration 004 landed. Kept here so the row's history is
+-- recorded; not needed on a fresh project, since the call above now
+-- passes the right values.
+-- ------------------------------------------------------------
+-- update public.organizations
+-- set timezone = 'America/New_York', currency = 'USD'
+-- where slug = 'kedus-hair-salon';
