@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { getProfile } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -19,7 +21,6 @@ export default async function Home() {
     .limit(1)
     .maybeSingle();
 
-  // TEMPORARY — proves /lib/auth runs. Remove once the staff area exists.
   const profile = await getProfile();
 
   return (
@@ -39,12 +40,12 @@ export default async function Home() {
         </p>
       )}
 
-      {/* TEMPORARY — remove once the staff area exists. */}
-      <p className="mt-8 text-sm text-zinc-500">
-        {profile
-          ? `Signed in as ${profile.full_name} — ${profile.role.display_name}`
-          : "Not signed in"}
-      </p>
+      <Link
+        href={profile ? "/staff" : "/login"}
+        className="mt-8 text-sm text-zinc-500 underline underline-offset-4"
+      >
+        {profile ? "Staff area" : "Staff sign in"}
+      </Link>
     </div>
   );
 }
