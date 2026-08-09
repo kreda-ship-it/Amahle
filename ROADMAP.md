@@ -102,11 +102,19 @@ Run `test-tenant-isolation.sql` after adding any of them. If a new table is
 missing its policy, the counts stop matching and you find out immediately.
 
 ### Phase 2 — Auth
-- [ ] `/lib/auth` module: who is this, what may they do
-- [ ] Login page for staff
-- [ ] Session handling
-- [ ] Permission-checking helper used everywhere
-- [ ] Confirm nothing outside `/lib/auth` calls Supabase auth
+- [x] `/lib/auth` module: who is this, what may they do
+- [x] Login page for staff
+- [x] Session handling — middleware refreshes the token before every page load
+- [x] Permission-checking helper used everywhere — `can()` and
+      `requirePermission()` are the only way the app asks, and both delegate to
+      `has_permission()` in Postgres. Used by `/staff`; every later page uses
+      the same two.
+- [x] Confirm nothing outside `/lib/auth` calls Supabase auth — verified by
+      `grep -rn '\.auth\.' src`. Re-run it after adding any page.
+
+**Not done, deliberately.** No generated database types yet, so `getProfile()`
+casts its result and TypeScript cannot check column names. `supabase gen types`
+is the fix, and it belongs with the next table rather than here.
 
 ### Phase 3 — Public website
 - [ ] **`services` table** + RLS policies (anonymous visitors read the bookable ones)

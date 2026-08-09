@@ -18,6 +18,36 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-09 — Phase 2, the application half
+
+**Built:** The Next.js app now talks to Supabase. Browser and server clients
+from `@supabase/ssr`, with `.env.local.example` committed so the required
+variables are documented. `/lib/auth` holding `getUser`, `getProfile`, `can`,
+`requireProfile`, `requirePermission` — `can()` delegates to `has_permission()`
+in Postgres, so the app and the RLS policies cannot disagree. Staff login at
+`/login` through a server action, so the password is never handled by browser
+JavaScript. Middleware refreshing the session token before every page load.
+`/staff`, the first page the database guards. Five commits.
+
+**Proven, not just written:** signed in as the Kedus Owner in a real browser and
+got three yeses from the permissions catalogue. `/staff` typed straight into the
+address bar while signed out redirects to `/login`. `grep` confirms the only
+three `.auth.` calls in `src/` sit inside `/lib/auth`.
+
+**Broke / unresolved:** `env.ts` first read variables as `process.env[name]`.
+Next.js substitutes values by finding the literal text at build time, so that
+would have arrived empty inside middleware — caught before it shipped, fixed by
+naming each variable in full. The Owner password was lost and reset directly in
+`auth.users` with SQL; acceptable on dev, not a habit to carry to prod. No
+generated database types, so `getProfile()` casts. Session refresh works but
+nothing tests it automatically — proving it needs an hour of waiting. Still no
+Vercel deploy and no prod project.
+
+**Next:** Phase 3, the public website. The `services` and `employees` tables
+with their RLS policies come first, then the pages that read them.
+
+---
+
 ## 2026-08-08 — Multi-tenant foundation
 
 **Built:** Supabase CLI installed and linked to Salon dev. Six migrations:
