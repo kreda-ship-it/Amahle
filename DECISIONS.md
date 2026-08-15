@@ -279,6 +279,76 @@ trigger as #8. Costs to weigh then: SMS is billed per message and every login is
 a message, while email codes are cheaper but `customers.email` is optional, so
 email-only login would exclude real customers.
 
+## 21. Foreign keys between tenant tables carry `org_id` — _2026-08-15_
+**Decision:** `employee_services.service_id` references `services (id, org_id)`,
+not `services (id)`. Same for `employee_id`, and for `employees.profile_id`.
+`profiles`, `services` and `employees` each carry a `unique (id, org_id)`
+constraint to make this possible. Every future table referencing a tenant table
+does the same.
+**Why:** RLS decides which rows you may *read*. It does not stop you *pointing
+at* a row you cannot read. An insert into `employee_services` carrying your own
+`org_id` but another salon's `service_id` passes every policy we write, because
+`with check` only verifies `org_id = current_org_id()`. Proven on 2026-08-15: the
+attempt fails with a foreign key violation, and would have succeeded silently
+without the composite key. At 1,000 salons the cost of finding this the other way
+is one business's stylist wired to another's service menu.
+**Alternative rejected:** Plain foreign keys plus care in application code. That
+is precisely the trust this architecture exists to avoid, and it fails the moment
+one query is written by someone who has not read this file.
+**Revisit when:** Never. Extend it to `appointments` in Phase 4 —
+`customer_id`, `employee_id` and `service_id` must all carry `org_id`.
+
+## 22. Employee-to-service assignment is rows, not columns — _2026-08-15_
+**Decision:** `employee_services` stays a many-to-many join table: one row per
+employee per service. Not one row per employee with a boolean column per service.
+**Why:** Columns would make the service menu part of the database's *shape*
+rather than its contents. Adding "Knotless Braids" would become a migration and a
+deploy instead of an insert, and the salon owner could never do it themselves.
+Worse for the platform: menus differ per salon, and a column cannot be
+per-tenant. Salon #2's "Balayage" column would sit null on every Kedus row, and
+Postgres caps a table near 1,600 columns — roughly 60 salons in. Rows carry
+`org_id`; columns cannot.
+**Alternative rejected:** One row per employee, a boolean column per service.
+Genuinely easier to read as a table, and that readability is worth having — but
+as a *screen*, not as storage. The Phase 6 admin UI should render exactly that
+grid, generated from whichever services that salon has, with each tick writing
+one join row.
+**Revisit when:** Never for storage. The grid view is a Phase 6 UI task.
+
+## 23. The public price list shows every active service — _2026-08-13_
+**Decision:** Anonymous visitors see all active services. `is_bookable_online`
+controls only whether a Book button appears; a phone-only service still shows
+with its price and a "call us" note. Alongside it, `price_display` takes `exact`,
+`from` or `hidden`, chosen per service.
+**Why:** A price list that hides half the menu costs the salon customers. Someone
+wanting braids, not finding braids listed, concludes the salon does not do braids
+and calls a competitor. Separately, a flat price is a marketing decision rather
+than a fact — braiding and colour are priced by length and condition, and forcing
+one number would either publish a lie or leave the service off the page. Kedus's
+own website already publishes no prices at all, so `hidden` matches what they
+chose unaided.
+**Alternative rejected:** Show only online-bookable services publicly. Also
+rejected: a single `is_price_public` boolean, which would have needed a second
+migration the first time someone asked for "from $120".
+**Revisit when:** Never expected. Note the known gap: `price` is granted to
+`anon` even on a `hidden` service, because grants are per column and not per row.
+A presentation preference, not a secret. The fix if it ever matters is a view
+that nulls the column.
+
+## 24. The team roster and login management are separate permissions — _2026-08-15_
+**Decision:** `employee.manage` continues to govern `profiles` — who can log in.
+A new `employee.record.manage` governs `employees` and `employee_services` — the
+roster, including people who never log in. Owner and Manager hold both.
+**Why:** They are different jobs against different tables, and a single key would
+mean granting someone the ability to create logins in order to let them add a
+stylist to the team page.
+**Alternative rejected:** Reuse `employee.manage` for both and reword its
+description. Recommended at the time on the grounds that managing the team is one
+job; overruled deliberately in favour of precision.
+**Revisit when:** Someone is granted one and not the other and finds the split
+confusing rather than useful. If they are always granted together in practice,
+merging them is a migration and a policy edit.
+
 ---
 
 ## Template for new entries
