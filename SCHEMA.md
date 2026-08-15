@@ -125,18 +125,31 @@ actually lives.
 A person who performs services. Usually also has a profile, but not always — a
 stylist who doesn't use the system still needs to exist on the calendar.
 
+**Never collapse this table into `profiles`.** An employee performs services; a
+profile can log in. They usually point at each other, and the cases where they
+don't are the ones that matter.
+
 | Column | Type | Meaning |
 |---|---|---|
-| `profile_id` | uuid, nullable | Their login, if they have one |
-| `full_name` | text | |
+| `profile_id` | uuid, nullable | Their login, if they have one. Null is normal. Unique among live rows. |
+| `full_name` | text | Not unique — two people can share a name |
 | `photo_url` | text | For the public team page |
 | `position` | text | e.g. "Senior Stylist" |
 | `bio` | text | Public-facing |
-| `phone` | text | |
-| `email` | text | |
-| `is_bookable` | boolean | Do they appear in booking |
+| `phone` | text | **Staff personal contact.** Never visible to anon. |
+| `email` | text | **Staff personal contact.** Never visible to anon. |
+| `is_bookable` | boolean | False means they still appear on the team page but can't be chosen when booking |
 | `is_active` | boolean | Still employed |
 | `display_order` | int | Order on the team page |
+
+**What anonymous visitors can read:** `id`, `org_id`, `full_name`, `photo_url`,
+`position`, `bio`, `is_bookable`, `display_order` — active, live rows only.
+`phone`, `email` and `profile_id` are not granted, so a stylist's mobile number
+cannot reach the public site even by accident.
+
+Managed by anyone holding `employee.record.manage` — Owner and Manager by
+default. Note that this is a **different permission** from `employee.manage`,
+which governs `profiles`, i.e. who can log in. Roster and logins are two jobs.
 
 ## employee_working_hours
 
@@ -162,29 +175,58 @@ Exceptions — holidays, sick days, blocked time.
 
 ## services
 
-What the salon offers.
+What the salon offers. The first table anonymous visitors read.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `name` | text | |
+| `name` | text | Unique per organization, among live rows |
 | `description` | text | |
 | `category` | text | e.g. "Colour", "Cuts" |
-| `price` | numeric | |
+| `price` | numeric(10,2) | |
+| `price_display` | text | `exact` → "$120", `from` → "from $120", `hidden` → no price shown. A flat number is a marketing decision, not a fact — braiding and colour are priced by length. |
 | `duration_minutes` | int | How long it takes |
-| `buffer_minutes` | int | Cleanup/prep time after |
-| `is_bookable_online` | boolean | Some services need a phone conversation |
+| `buffer_minutes` | int | Cleanup/prep time after. **Internal** — never visible to anon. |
+| `is_bookable_online` | boolean | False means the service still appears on the public price list, with a "call us" note instead of a Book button. It does **not** hide the service. |
 | `image_url` | text | |
 | `display_order` | int | |
 | `is_active` | boolean | |
 
+**What anonymous visitors can read:** `id`, `org_id`, `name`, `description`,
+`category`, `price`, `price_display`, `duration_minutes`, `is_bookable_online`,
+`image_url`, `display_order` — and only rows that are live and active. `org_id`
+has to be granted because filtering a query by a column requires SELECT
+privilege on it.
+
+The anon policy is not scoped to one organization, mirroring
+`organizations_select_anon`. Every salon's price list is public by definition.
+The application picks the organization by slug and filters.
+
+**Known gap:** `price` is readable by anon even when `price_display` is
+`hidden`, because grants are per column and not per row. A presentation
+preference, not a secret. The fix, if it ever matters, is a view that nulls the
+column. Not built.
+
+Managed by anyone holding `service.manage` — Owner and Manager by default.
+
 ## employee_services
 
-Which employees can perform which services.
+Which employees can perform which services. Unique per pair among live rows.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `employee_id` | uuid | |
-| `service_id` | uuid | |
+| `employee_id` | uuid | References `employees (id, org_id)` |
+| `service_id` | uuid | References `services (id, org_id)` |
+
+Readable by anonymous visitors — it holds no personal data, and who performs
+what is exactly what a customer is trying to find out.
+
+**Both foreign keys carry `org_id`, and that is deliberate.** RLS decides which
+rows you may *read*; it does not stop you *pointing at* a row you cannot read.
+An insert carrying your own `org_id` but another salon's `service_id` would pass
+every policy, because `with check` only verifies `org_id = current_org_id()`.
+Referencing `(id, org_id)` makes the database itself reject a reference that
+crosses a salon boundary. `profiles`, `services` and `employees` each carry a
+`unique (id, org_id)` constraint to support this.
 
 ## customers
 

@@ -12,7 +12,11 @@
 --
 -- p_user_id below is the Kedus owner. Change it to test as someone else.
 --
--- Last run against Salon dev on 2026-08-08 — passed: 1, 4, 4, 0.
+-- Last run against Salon dev on 2026-08-15 — passed: 1, 4, 6, 0, 0.
+-- Expected counts change as migrations land:
+--   007  services table; service.manage to Owner and Manager (4 → 6)
+--   008  employees and employee_services; employee.record.manage to
+--        Owner and Manager (6 → 8)
 
 begin;
 
@@ -24,6 +28,18 @@ begin;
     p_currency => 'USD'
   );
 
+  -- Give the other organization something to hide. This runs before the
+  -- role switch below, so no policy applies to the writes themselves.
+  insert into public.services (org_id, name, price, duration_minutes)
+  select o.id, 'Other Salon Secret Service', 999, 60
+  from public.organizations o
+  where o.slug = 'test-salon-two';
+
+  insert into public.employees (org_id, full_name, phone)
+  select o.id, 'Other Salon Secret Stylist', '555-0100'
+  from public.organizations o
+  where o.slug = 'test-salon-two';
+
   -- Become the Kedus owner. set_config with `true` scopes it to this
   -- transaction; auth.uid() reads the `sub` claim from here.
   select set_config(
@@ -33,15 +49,21 @@ begin;
   );
   set local role authenticated;
 
-  -- At this moment the database holds TWO organizations, EIGHT roles and
-  -- EIGHT role_permissions. Expected result: 1, 4, 4, 0.
+  -- At this moment the database holds TWO organizations, EIGHT roles,
+  -- SIXTEEN role_permissions, ONE service and ONE employee.
+  -- Expected result: 1, 4, 8, 0, 0, 0.
   --
-  -- The last column is the point. The other organization exists. It is
-  -- not visible. Not because the query filtered it out — because
-  -- Postgres refuses to hand it over.
+  -- The last three columns are the point. The other organization, its
+  -- service and its stylist all exist. None of them is visible. Not
+  -- because the query filtered them out — because Postgres refuses to
+  -- hand them over.
   select (select count(*) from public.organizations)                              as organizations_visible,
          (select count(*) from public.roles)                                      as roles_visible,
          (select count(*) from public.role_permissions)                           as role_permissions_visible,
-         (select count(*) from public.organizations where slug = 'test-salon-two') as other_org_visible;
+         (select count(*) from public.organizations where slug = 'test-salon-two') as other_org_visible,
+         (select count(*) from public.services
+           where name = 'Other Salon Secret Service')                             as other_service_visible,
+         (select count(*) from public.employees
+           where full_name = 'Other Salon Secret Stylist')                        as other_employee_visible;
 
 rollback;
