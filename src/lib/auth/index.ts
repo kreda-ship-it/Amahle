@@ -72,7 +72,7 @@ export const getProfile = cache(async (): Promise<Profile | null> => {
 
   if (error || !data) return null;
 
-  return data as unknown as Profile;
+  return data;
 });
 
 /**
