@@ -1,6 +1,6 @@
 # ROADMAP.md — Amahle
 
-Last updated: 2026-08-08
+Last updated: 2026-08-15
 
 ---
 
@@ -70,7 +70,11 @@ tables moved into the phases that use them — see the note below.
 - [x] RLS enabled on every table
 - [x] RLS policies written and reviewed as a separate step
 - [x] Column-level grants — RLS hides rows, grants hide columns
-- [x] RLS tested: a user from org A cannot read org B's rows — passed 1, 4, 4, 0. Re-runnable as `supabase/scripts/test-tenant-isolation.sql`
+- [x] RLS tested: a user from org A cannot read org B's rows. Re-runnable as `supabase/scripts/test-tenant-isolation.sql` — expected counts are in its header and change as migrations land
+- [x] **`supabase/scripts/audit-tenant-safety.sql`** — added 2026-08-15. Asks the
+      database what tables exist and reports any breaking the tenant rules, so it
+      covers tables that don't exist yet. No rows means clean. Run after every
+      migration. Found three real violations on its first run
 - [x] Supabase CLI wired up
 - [x] Permissions catalogue seeded
 - [x] `create_organization()` — canonical onboarding path
@@ -117,9 +121,16 @@ casts its result and TypeScript cannot check column names. `supabase gen types`
 is the fix, and it belongs with the next table rather than here.
 
 ### Phase 3 — Public website
-- [ ] **`services` table** + RLS policies (anonymous visitors read the bookable ones)
-- [ ] **`employees` and `employee_services` tables** + RLS policies
-- [ ] Seed the salon's real services, prices, and team
+- [x] **`services` table** + RLS policies — anonymous visitors read every *active*
+      service, not only the online-bookable ones. `is_bookable_online` controls
+      the Book button, not visibility. DECISIONS #23
+- [x] **`employees` and `employee_services` tables** + RLS policies. `phone` and
+      `email` are never granted to `anon`
+- [x] Seed the salon's real services, prices, and team — 24 services with their
+      real names, from kedushairsalonandbraiding.com. Prices, durations and all
+      five employees are invented and marked as such in `seed-kedus.sql`.
+      **Real durations block the Phase 4 booking form. The fictional staff must
+      be replaced before this site reaches a real domain.**
 - [ ] Homepage
 - [ ] Services and pricing page (driven from database)
 - [ ] Team page (driven from database)

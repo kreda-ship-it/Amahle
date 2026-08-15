@@ -18,6 +18,88 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-15 — Phase 3, the database half
+
+**Built:** Four migrations. `services` (007) with `price_display` taking `exact`,
+`from` or `hidden`, so a salon can quote "from $120" or nothing at all rather
+than being forced into a flat number. `employees` and `employee_services` (008),
+where `profile_id` is nullable because an employee who never logs in still
+belongs on the calendar. A regression fix (009). Composite foreign keys on
+`roles` and `audit_log` (010). Two new permissions, `service.manage` and
+`employee.record.manage`, both backfilled to Kedus, whose roles predate them.
+
+`supabase/scripts/seed-kedus.sql` — 24 services with their real names and
+categories, five employees, 66 mappings, the salon's real contact details
+replacing the South African placeholders, and hours, socials and site copy in
+`public_settings`. Sourced from kedushairsalonandbraiding.com.
+
+`supabase/scripts/audit-tenant-safety.sql` — the session's most useful hour. It
+asks the database what tables exist and reports any breaking the tenant rules:
+missing `org_id`, RLS off, RLS on with no policies, a foreign key to a tenant
+table not carrying `org_id`, `DELETE` granted, `anon` holding a table-wide grant,
+missing `deleted_at`, or a `security definer` function without a pinned
+`search_path`. No rows means clean. Unlike the isolation test it covers tables
+that do not exist yet.
+
+DECISIONS #21–24. Three commits.
+
+**Proven, not just written:** Isolation holds with all three new tables — 1, 4,
+8, 0, 0, 0. `select phone from employees` as `anon` is refused by Postgres, so a
+stylist's number cannot reach a public page regardless of what any future query
+asks for. An attempt to link Kedus's stylist to another salon's service fails on
+`employee_services_service_same_org`; without the composite key it would have
+succeeded silently with every RLS policy satisfied. A price change logs only the
+`price` key with `from` and `to`; a soft delete logs as `entity.deleted` at
+`critical` rather than as an update.
+
+**Broke / unresolved:** Migration 007 was pasted into the SQL editor instead of
+pushed, so the schema applied but the history table did not know — fixed with
+`migration repair`. The rule that avoids it: migrations go through `db push`,
+scripts go in the SQL editor.
+
+I reintroduced a bug migration 004 had already fixed. Extending
+`create_organization()` in 007 and 008 with `CREATE OR REPLACE`, I carried the
+pre-004 signature along, and Postgres permits *adding* a default back — so
+onboarding without naming a timezone silently meant Africa/Johannesburg again.
+No organization was created in the window. Migration 009 restores it and the
+function comment now says why not to.
+
+The audit script found three foreign keys from migrations 001 and 006 pointing
+at tenant tables by id alone: `profiles.role_id`, `role_permissions.role_id`,
+`audit_log.actor_id`. None was exploitable, because `has_permission()` joins
+`role_permissions` on both `role_id` and `org_id` — a profile aimed at another
+salon's role gets nothing rather than someone else's access. That is one
+undocumented line doing load-bearing work. Fixed in 010. The lesson worth
+keeping: DECISIONS #21 was already written down and the violations were still
+there.
+
+**The seed's fictional half.** Every service name and category is real, as are
+the hours, contacts, socials, tagline and two $40 prices. Every other price,
+every duration and all five employees are invented. Two of those bite later:
+durations are what Phase 4 computes availability from, so real ones block the
+booking form, and the five staff are fictional people who must be replaced before
+this site reaches a real domain or someone will phone up asking for Hanna.
+
+The salon's own site is a source, not the truth — it links a Facebook page they
+do not use, and gives an address mixing a DC street with a Maryland ZIP. Recorded
+as Maryland; needs confirming before it hits a map. Their Instagram handle is
+still unverified: the site says `kedus_hb`, the TikTok is `kedushairsalon`.
+
+A stray `insert` ran three times and made three "Test Stylist" rows, because
+`full_name` is deliberately not unique — two real people can share a name. Extras
+soft-deleted. Guarding against a double-click belongs in the Phase 6 create form,
+not in the database.
+
+Still no Vercel deploy and no prod project. Still no generated database types, so
+`getProfile()` casts. Docker still not installed, so `db push` warns about a
+catalog cache it cannot build; harmless so far.
+
+**Next:** Phase 3's pages — homepage, services and pricing, team, gallery,
+contact — all reading from the tables seeded today. The first session with
+something on screen.
+
+---
+
 ## 2026-08-09 — Phase 2, the application half
 
 **Built:** The Next.js app now talks to Supabase. Browser and server clients
