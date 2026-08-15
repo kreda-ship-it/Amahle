@@ -35,6 +35,20 @@ access to *every column* of it. Where a column must stay hidden — such as
 **Nothing has DELETE.** No role is granted `delete` on any table. Soft-delete is
 enforced by the database, not by discipline. Deleting means updating `deleted_at`.
 
+**Foreign keys between tenant tables carry `org_id`.** A reference is written as
+`references some_table (id, org_id)`, never `(id)` alone, so each referenced
+table also holds a `unique (id, org_id)` constraint. RLS decides which rows you
+may *read*; it does not stop you *pointing at* a row you cannot read, and every
+`with check` clause only verifies `org_id = current_org_id()`. See DECISIONS #21.
+References to `organizations` are exempt — that table has no `org_id` of its own.
+
+**Two scripts check all of this.** `supabase/scripts/audit-tenant-safety.sql`
+asks the database what tables exist and reports any that break the rules above —
+run it after every migration; no rows means clean.
+`supabase/scripts/test-tenant-isolation.sql` proves one salon cannot read
+another's rows. The first found three violations of the `org_id` foreign key rule
+on its first run, in tables written before the rule existed.
+
 **Two documented exceptions to the `org_id` rule:**
 
 - `organizations` has no `org_id` — it *is* the organization. Its own `id` is the
