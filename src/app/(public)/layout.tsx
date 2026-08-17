@@ -104,6 +104,11 @@ export default async function PublicLayout({
                   Services &amp; Pricing
                 </Link>
               </li>
+              <li>
+                <Link href="/team" className="hover:text-brand">
+                  Our Team
+                </Link>
+              </li>
             </ul>
           </nav>
 
