@@ -12,7 +12,8 @@
 --
 -- p_user_id below is the Kedus owner. Change it to test as someone else.
 --
--- Last run against Salon dev on 2026-08-15 — passed: 1, 4, 6, 0, 0.
+-- Last run against Salon dev on 2026-08-17 — passed:
+--   1, 4, 21, 0, 0, 0, 0, 0, 0, 0
 -- Expected counts change as migrations land:
 --   007  services table; service.manage to Owner and Manager (4 → 6)
 --   008  employees and employee_services; employee.record.manage to
@@ -20,6 +21,10 @@
 --   011  gallery_images, and a seventh column. The permission count does
 --        NOT move: the gallery is guarded by organization.edit, which
 --        already existed, so no new key was added
+--   012  customers, customer_care_notes, customer_flags, and three more
+--        columns. Four new keys, and the first permissions Receptionist
+--        and Stylist have ever held, so the count jumps 8 → 21:
+--          Owner 9, Manager 7, Receptionist 3, Stylist 2
 
 begin;
 
@@ -48,6 +53,25 @@ begin;
   from public.organizations o
   where o.slug = 'test-salon-two';
 
+  -- A customer of the other salon, with an allergy and a flag. These
+  -- three are the rows that would do real damage if they leaked: a
+  -- name, a phone number, and a medical note about someone who never
+  -- agreed to be in anyone's database.
+  insert into public.customers (org_id, full_name, phone)
+  select o.id, 'Other Salon Secret Customer', '555-0199'
+  from public.organizations o
+  where o.slug = 'test-salon-two';
+
+  insert into public.customer_care_notes (org_id, customer_id, allergies)
+  select c.org_id, c.id, 'Other salon secret allergy'
+  from public.customers c
+  where c.full_name = 'Other Salon Secret Customer';
+
+  insert into public.customer_flags (org_id, customer_id, flag_type, note)
+  select c.org_id, c.id, 'vip', 'Other salon secret flag'
+  from public.customers c
+  where c.full_name = 'Other Salon Secret Customer';
+
   -- Become the Kedus owner. set_config with `true` scopes it to this
   -- transaction; auth.uid() reads the `sub` claim from here.
   select set_config(
@@ -58,14 +82,20 @@ begin;
   set local role authenticated;
 
   -- At this moment the database holds TWO organizations, EIGHT roles,
-  -- SIXTEEN role_permissions, ONE service, ONE employee and ONE
-  -- gallery image belonging to the other salon.
-  -- Expected result: 1, 4, 8, 0, 0, 0, 0.
+  -- FORTY-TWO role_permissions, and — belonging to the other salon —
+  -- ONE service, ONE employee, ONE gallery image, ONE customer, ONE
+  -- care note and ONE flag.
+  -- Expected result: 1, 4, 21, 0, 0, 0, 0, 0, 0, 0.
   --
-  -- The last four columns are the point. The other organization, its
-  -- service, its stylist and its photograph all exist. None of them is
-  -- visible. Not because the query filtered them out — because Postgres
-  -- refuses to hand them over.
+  -- The seven zeroes are the point. Every one of those rows exists.
+  -- None is visible. Not because the query filtered them out — because
+  -- Postgres refuses to hand them over.
+  --
+  -- The last three matter more than they look. The Kedus owner holds
+  -- customer.view AND customer.view_sensitive, so those zeroes are not
+  -- a permission being denied — they are the tenant boundary holding
+  -- against someone who has every relevant permission there is. Had we
+  -- tested as a Stylist, a zero would have proved nothing.
   select (select count(*) from public.organizations)                              as organizations_visible,
          (select count(*) from public.roles)                                      as roles_visible,
          (select count(*) from public.role_permissions)                           as role_permissions_visible,
@@ -75,6 +105,12 @@ begin;
          (select count(*) from public.employees
            where full_name = 'Other Salon Secret Stylist')                        as other_employee_visible,
          (select count(*) from public.gallery_images
-           where alt_text = 'Other salon secret photograph')                      as other_image_visible;
+           where alt_text = 'Other salon secret photograph')                      as other_image_visible,
+         (select count(*) from public.customers
+           where full_name = 'Other Salon Secret Customer')                       as other_customer_visible,
+         (select count(*) from public.customer_care_notes
+           where allergies = 'Other salon secret allergy')                        as other_care_note_visible,
+         (select count(*) from public.customer_flags
+           where note = 'Other salon secret flag')                                as other_flag_visible;
 
 rollback;

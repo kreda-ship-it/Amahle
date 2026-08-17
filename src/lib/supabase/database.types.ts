@@ -68,6 +68,191 @@ export type Database = {
           },
         ]
       }
+      customer_care_notes: {
+        Row: {
+          allergies: string | null
+          created_at: string
+          customer_id: string
+          deleted_at: string | null
+          hair_formula: string | null
+          id: string
+          org_id: string
+          sensitivities: string | null
+          updated_at: string
+        }
+        Insert: {
+          allergies?: string | null
+          created_at?: string
+          customer_id: string
+          deleted_at?: string | null
+          hair_formula?: string | null
+          id?: string
+          org_id: string
+          sensitivities?: string | null
+          updated_at?: string
+        }
+        Update: {
+          allergies?: string | null
+          created_at?: string
+          customer_id?: string
+          deleted_at?: string | null
+          hair_formula?: string | null
+          id?: string
+          org_id?: string
+          sensitivities?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_care_notes_customer_same_org"
+            columns: ["customer_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "customer_care_notes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_flags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          deleted_at: string | null
+          flag_type: string
+          id: string
+          min_permission: string
+          note: string | null
+          org_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          deleted_at?: string | null
+          flag_type: string
+          id?: string
+          min_permission?: string
+          note?: string | null
+          org_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          deleted_at?: string | null
+          flag_type?: string
+          id?: string
+          min_permission?: string
+          note?: string | null
+          org_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_flags_created_by_same_org"
+            columns: ["created_by", "org_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "customer_flags_customer_same_org"
+            columns: ["customer_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "customer_flags_min_permission_fkey"
+            columns: ["min_permission"]
+            isOneToOne: false
+            referencedRelation: "permissions"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "customer_flags_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          birthday: string | null
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          first_visit_at: string | null
+          full_name: string
+          id: string
+          last_visit_at: string | null
+          notes: string | null
+          org_id: string
+          phone: string
+          phone_digits: string | null
+          preferred_employee_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          birthday?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          first_visit_at?: string | null
+          full_name: string
+          id?: string
+          last_visit_at?: string | null
+          notes?: string | null
+          org_id: string
+          phone: string
+          phone_digits?: string | null
+          preferred_employee_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          birthday?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          first_visit_at?: string | null
+          full_name?: string
+          id?: string
+          last_visit_at?: string | null
+          notes?: string | null
+          org_id?: string
+          phone?: string
+          phone_digits?: string | null
+          preferred_employee_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_preferred_employee_same_org"
+            columns: ["preferred_employee_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
       employee_services: {
         Row: {
           created_at: string
@@ -531,12 +716,12 @@ export type Database = {
       create_organization: {
         Args: {
           p_address?: string
-          p_currency: string
+          p_currency?: string
           p_email?: string
           p_name: string
           p_phone?: string
           p_slug: string
-          p_timezone: string
+          p_timezone?: string
         }
         Returns: string
       }
