@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { imageUrl } from "@/lib/site/images";
 import { getOrganization } from "@/lib/site/organization";
+import { siteUrl } from "@/lib/site/url";
 
 /**
  * The chrome every public page shares — the header at the top and the footer
@@ -36,7 +37,18 @@ function smsHref(phone: string): string {
 export async function generateMetadata(): Promise<Metadata> {
   const org = await getOrganization();
 
+  const description =
+    org.content.about ?? org.content.tagline ?? `${org.name} — book by phone.`;
+
   return {
+    /*
+     * The address every other tag is measured against. Without it, Next
+     * writes the share image as `/opengraph-image`, and WhatsApp — which is
+     * fetching from its own servers, not from ours — has no idea what that
+     * means, so the card arrives with no picture.
+     */
+    metadataBase: siteUrl(),
+
     title: {
       // The homepage sets no title of its own, so it gets this one.
       default: org.name,
@@ -45,7 +57,37 @@ export async function generateMetadata(): Promise<Metadata> {
       // which salon it is serving.
       template: `%s · ${org.name}`,
     },
-    description: org.content.about ?? org.content.tagline ?? undefined,
+    description,
+
+    /*
+     * What WhatsApp, iMessage, Instagram, Slack and LinkedIn read when
+     * somebody pastes a link. Without these the link renders as a bare URL —
+     * no name, no description, no picture — which for a business that grows
+     * by word of mouth is the version that costs the most.
+     *
+     * No `images` key: Next finds `opengraph-image.tsx` in this folder by
+     * filename and fills it in, at the right size, with a cache-busting hash.
+     *
+     * `type: "website"` rather than "business.business". The business type
+     * demands a street address in a rigid format and adds nothing that the
+     * structured data on the page does not already say properly.
+     */
+    openGraph: {
+      type: "website",
+      siteName: org.name,
+      title: org.name,
+      description,
+      url: siteUrl().toString(),
+      locale: "en_US",
+    },
+
+    // X reads Open Graph as a fallback, but naming the card type is what
+    // gets the large image rather than a thumbnail beside the text.
+    twitter: {
+      card: "summary_large_image",
+      title: org.name,
+      description,
+    },
   };
 }
 
