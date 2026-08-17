@@ -133,7 +133,7 @@ export type Database = {
           is_bookable: boolean
           org_id: string
           phone: string | null
-          photo_url: string | null
+          photo_path: string | null
           position: string | null
           profile_id: string | null
           updated_at: string
@@ -150,7 +150,7 @@ export type Database = {
           is_bookable?: boolean
           org_id: string
           phone?: string | null
-          photo_url?: string | null
+          photo_path?: string | null
           position?: string | null
           profile_id?: string | null
           updated_at?: string
@@ -167,7 +167,7 @@ export type Database = {
           is_bookable?: boolean
           org_id?: string
           phone?: string | null
-          photo_url?: string | null
+          photo_path?: string | null
           position?: string | null
           profile_id?: string | null
           updated_at?: string
@@ -186,6 +186,53 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      gallery_images: {
+        Row: {
+          alt_text: string
+          caption: string | null
+          created_at: string
+          deleted_at: string | null
+          display_order: number
+          id: string
+          is_active: boolean
+          org_id: string
+          storage_path: string
+          updated_at: string
+        }
+        Insert: {
+          alt_text: string
+          caption?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          org_id: string
+          storage_path: string
+          updated_at?: string
+        }
+        Update: {
+          alt_text?: string
+          caption?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          org_id?: string
+          storage_path?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gallery_images_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -421,7 +468,7 @@ export type Database = {
           display_order: number
           duration_minutes: number
           id: string
-          image_url: string | null
+          image_path: string | null
           is_active: boolean
           is_bookable_online: boolean
           name: string
@@ -439,7 +486,7 @@ export type Database = {
           display_order?: number
           duration_minutes: number
           id?: string
-          image_url?: string | null
+          image_path?: string | null
           is_active?: boolean
           is_bookable_online?: boolean
           name: string
@@ -457,7 +504,7 @@ export type Database = {
           display_order?: number
           duration_minutes?: number
           id?: string
-          image_url?: string | null
+          image_path?: string | null
           is_active?: boolean
           is_bookable_online?: boolean
           name?: string
