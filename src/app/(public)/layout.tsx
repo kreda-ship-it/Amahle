@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { imageUrl } from "@/lib/site/images";
 import { getOrganization } from "@/lib/site/organization";
+import { salonStructuredData } from "@/lib/site/structured-data";
 import { siteUrl } from "@/lib/site/url";
 
 /**
@@ -109,6 +110,24 @@ export default async function PublicLayout({
 
   return (
     <>
+      {/*
+        The salon described in the format Google reads — what turns a plain
+        blue search result into the card with hours, a phone number and a map
+        pin. Inert data, not code: the browser does not execute ld+json.
+
+        `dangerouslySetInnerHTML` is the only way to put raw text inside a
+        script tag in React, and the name is a warning about untrusted input.
+        This input is not untrusted — it is our own object, serialised by
+        JSON.stringify, which escapes everything a salon could type into its
+        own name. Nothing here comes from a visitor.
+      */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(salonStructuredData(org)),
+        }}
+      />
+
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-4">
           {/*
