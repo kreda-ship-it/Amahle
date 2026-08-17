@@ -1,3 +1,6 @@
+import Image from "next/image";
+
+import { imageUrl } from "@/lib/site/images";
 import { getOrganization, type OpeningHours } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -90,50 +93,95 @@ export default async function Home() {
   }
 
   const hourGroups = groupHours(org.content.hours);
+  const heroImage = imageUrl(org.content.heroImagePath);
 
   return (
     <>
-      {/* Hero */}
+      {/*
+        Hero. The photograph sits BESIDE the words, never behind them.
+
+        Text laid over a photograph is the usual way to do this and it goes
+        wrong constantly: the contrast depends on whichever part of the image
+        happens to be behind each letter, so a photo the salon swaps next month
+        can quietly make its own tagline unreadable. Side by side, the words are
+        on a plain background and always legible, whatever the photo turns out
+        to be. It also means no second white-text version of this section to
+        keep in step.
+
+        With no photograph the grid is one column and this is exactly the page
+        that existed before — a salon with no photo yet is not a broken salon.
+      */}
       <section className="mx-auto max-w-5xl px-5 pt-16 pb-12 sm:pt-24">
-        {org.content.foundedYear && (
-          <p className="text-sm font-medium tracking-widest text-brand uppercase">
-            Since {org.content.foundedYear}
-          </p>
-        )}
+        <div
+          className={
+            heroImage
+              ? "grid items-center gap-10 lg:grid-cols-2"
+              : "grid gap-10"
+          }
+        >
+          <div>
+            {org.content.foundedYear && (
+              <p className="text-sm font-medium tracking-widest text-brand uppercase">
+                Since {org.content.foundedYear}
+              </p>
+            )}
 
-        <h1 className="mt-4 font-display text-4xl leading-tight font-semibold text-balance sm:text-6xl">
-          {org.name}
-        </h1>
+            <h1 className="mt-4 font-display text-4xl leading-tight font-semibold text-balance sm:text-6xl">
+              {org.name}
+            </h1>
 
-        {org.content.tagline && (
-          <p className="mt-5 max-w-2xl text-lg text-ink-muted text-pretty sm:text-xl">
-            {org.content.tagline}
-          </p>
-        )}
+            {org.content.tagline && (
+              <p className="mt-5 max-w-2xl text-lg text-ink-muted text-pretty sm:text-xl">
+                {org.content.tagline}
+              </p>
+            )}
 
-        {/*
-          The call to action is a phone number, not a Book button. Online
-          booking arrives in Phase 4; until it does, the phone is how this
-          salon genuinely takes bookings, and a button that goes nowhere is
-          worse than no button.
-        */}
-        <div className="mt-8 flex flex-wrap gap-3">
-          {org.phone && (
-            <a
-              href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-              className="rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
-            >
-              Call {org.phone}
-            </a>
-          )}
+            {/*
+              The call to action is a phone number, not a Book button. Online
+              booking arrives in Phase 4; until it does, the phone is how this
+              salon genuinely takes bookings, and a button that goes nowhere is
+              worse than no button.
+            */}
+            <div className="mt-8 flex flex-wrap gap-3">
+              {org.phone && (
+                <a
+                  href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
+                  className="rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
+                >
+                  Call {org.phone}
+                </a>
+              )}
 
-          {org.content.textNumber && (
-            <a
-              href={`sms:${org.content.textNumber.replace(/[^\d+]/g, "")}`}
-              className="rounded-full border border-brand px-6 py-3 font-medium text-brand transition-colors hover:bg-surface-sunk"
-            >
-              Text {org.content.textNumber}
-            </a>
+              {org.content.textNumber && (
+                <a
+                  href={`sms:${org.content.textNumber.replace(/[^\d+]/g, "")}`}
+                  className="rounded-full border border-brand px-6 py-3 font-medium text-brand transition-colors hover:bg-surface-sunk"
+                >
+                  Text {org.content.textNumber}
+                </a>
+              )}
+            </div>
+          </div>
+
+          {heroImage && (
+            /*
+             * The fixed aspect ratio is what stops the page jumping as the
+             * photo arrives: the space is reserved before the file has
+             * downloaded. `fill` lets the image cover that space at whatever
+             * dimensions it happens to have, and `sizes` tells the browser it
+             * will never need more than half the window's width on a large
+             * screen, so a phone downloads a phone-sized file.
+             */
+            <div className="relative aspect-4/3 overflow-hidden rounded-3xl bg-surface-sunk">
+              <Image
+                src={heroImage}
+                alt={org.content.heroImageAlt ?? org.name}
+                fill
+                priority
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className="object-cover"
+              />
+            </div>
           )}
         </div>
       </section>

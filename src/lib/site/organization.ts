@@ -71,6 +71,18 @@ export type SiteContent = {
   textNumber: string | null;
   hours: OpeningHours[];
   social: SocialLinks;
+
+  /*
+   * Image PATHS, not addresses — `<org_id>/hero/shopfront.jpg`. Pass them
+   * through `imageUrl()` from ./images to get something a browser can fetch.
+   *
+   * These live in public_settings rather than in a table because each is a
+   * single value, exactly like the tagline. `gallery_images` is a table
+   * because a gallery is a list: ordered, captioned, and changing.
+   */
+  heroImagePath: string | null;
+  heroImageAlt: string | null;
+  logoPath: string | null;
 };
 
 export type Organization = {
@@ -147,6 +159,9 @@ function readContent(value: Json | null): SiteContent {
     textNumber: asText(row.text_number),
     hours: asHours(row.hours),
     social: asSocial(row.social),
+    heroImagePath: asText(row.hero_image),
+    heroImageAlt: asText(row.hero_image_alt),
+    logoPath: asText(row.logo),
   };
 }
 

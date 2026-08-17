@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
+import { imageUrl } from "@/lib/site/images";
 import { getOrganization } from "@/lib/site/organization";
 
 /**
@@ -54,6 +56,7 @@ export default async function PublicLayout({
 }) {
   const org = await getOrganization();
   const { social } = org.content;
+  const logo = imageUrl(org.content.logoPath);
 
   const socialLinks = [
     { label: "Instagram", href: social.instagram },
@@ -66,11 +69,27 @@ export default async function PublicLayout({
     <>
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-4">
-          <Link
-            href="/"
-            className="font-display text-lg font-semibold text-ink sm:text-xl"
-          >
-            {org.name}
+          {/*
+            A logo when the salon has one, its name in type when it does not.
+            The alt text is the salon's name either way — a logo's job is to
+            say who this is, so that is what someone using a screen reader
+            needs to hear. Never "logo".
+          */}
+          <Link href="/" className="flex items-center gap-3">
+            {logo ? (
+              <Image
+                src={logo}
+                alt={org.name}
+                width={160}
+                height={40}
+                priority
+                className="h-9 w-auto sm:h-10"
+              />
+            ) : (
+              <span className="font-display text-lg font-semibold text-ink sm:text-xl">
+                {org.name}
+              </span>
+            )}
           </Link>
 
           {/*
