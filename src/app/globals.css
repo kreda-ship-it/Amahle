@@ -1,26 +1,69 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   Design tokens.
+
+   Nothing in this project writes a colour into a component. Components
+   say `bg-brand` or `text-ink-muted`; those names resolve to the values
+   below, and this file is the only place a hex code appears.
+
+   That indirection is what makes a salon's site their own. One salon in
+   warm bronze and another in black and white are the same markup with
+   different values here — no page, no component and no stylesheet is
+   edited. Today the values are written down; the day a second salon
+   arrives they come from `organizations.public_settings` instead, and
+   the change is confined to this file and the public layout.
+
+   `@theme inline` is what allows that. It generates each utility to
+   read `var(--brand)` directly rather than baking the hex code into the
+   compiled CSS, so overriding `--brand` at request time actually takes
+   effect. Plain `@theme` would resolve the value at build time and a
+   per-salon colour would silently do nothing.
+
+   Add tokens by meaning, not by appearance. `--brand` survives a salon
+   changing colour; `--warm-bronze` does not.
+   ------------------------------------------------------------------ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand — buttons, links, anything the salon owns. */
+  --brand: #8a5a2b;
+  --brand-strong: #6d4520;
+
+  /* Text. `ink` is body copy, `ink-muted` is anything secondary. */
+  --ink: #1f1a17;
+  --ink-muted: #6b5d54;
+
+  /* Backgrounds. `surface` is the page, `surface-sunk` sets a section apart. */
+  --surface: #fffdfb;
+  --surface-sunk: #f6efe8;
+
+  /* Borders and rules. */
+  --line: #e8ded4;
+
+  /*
+   * The public site is deliberately light in both system settings. A salon's
+   * brand colours are chosen against paper and daylight, and inverting them
+   * automatically produces something nobody approved. This also keeps native
+   * form controls light, which is what `color-scheme` controls.
+   */
+  color-scheme: light;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-surface: var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-line: var(--line);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-fraunces);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
