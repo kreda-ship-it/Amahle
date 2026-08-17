@@ -93,10 +93,19 @@ export default async function PublicLayout({
           </Link>
 
           {/*
-            No navigation links yet, deliberately. Services, Team, Gallery and
-            Contact each add their own entry here as they are built — a link to
-            a page that does not exist is worse than no link.
+            One entry per page that actually exists. Team, Gallery and Contact
+            add their own as they are built — a link to a page that does not
+            exist is worse than no link.
           */}
+          <nav className="order-last w-full sm:order-none sm:w-auto">
+            <ul className="flex flex-wrap gap-5 text-sm">
+              <li>
+                <Link href="/services" className="hover:text-brand">
+                  Services &amp; Pricing
+                </Link>
+              </li>
+            </ul>
+          </nav>
 
           {org.phone && (
             <a
