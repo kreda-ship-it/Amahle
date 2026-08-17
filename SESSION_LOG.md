@@ -18,6 +18,125 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-17 — Phase 3, the first thing on screen
+
+**Built:** Generated database types, at last. `supabase gen types typescript
+--linked` reads the schema off Salon dev over the network, so Docker never came
+into it. Both Supabase clients now take `<Database>`, and the cast in
+`getProfile()` is gone — it typechecks without one, which is only true because
+migration 010 *replaced* `profiles_role_id_fkey` rather than adding a second
+path to `roles`. Two paths and PostgREST could not have inferred the embedded
+role.
+
+`src/lib/site/organization.ts` — `getOrganization()`, the only place a page
+learns which salon it serves. It returns the org's `id`, and every public page
+scopes its queries by that; no page names a salon. The slug comes from
+`SITE_ORG_SLUG`, defaulting to `kedus-hair-salon` so a fresh clone runs without
+anyone discovering an undocumented variable first. One deployment serves one
+salon today. When several share one, the slug comes from the request hostname
+instead — two lines inside `currentOrgSlug()` and nothing else in the app.
+`public_settings` is read defensively rather than trusted: a salon with no
+about paragraph gets a page without one, not a crash.
+
+The `(public)` route group, so `/login` and `/staff` do not inherit a salon's
+header and footer. A tool is not a shopfront. The page title template lives in
+that layout rather than the root, because the root must not know which salon it
+is serving.
+
+The homepage. Every word from the database: name, tagline, about, the
+Tuesday–Thursday promotion, the five service categories derived from `services`,
+opening hours, address. No Book button — booking is Phase 4 and the phone is how
+this salon actually takes bookings — and no nav links, because each page adds
+its own as it is built.
+
+`globals.css` now holds semantic tokens and no component names a colour.
+`@theme inline` is load-bearing: it compiles utilities to read `var(--brand)`
+rather than baking the hex in, so a per-salon colour read from the database will
+actually take effect later. Plain `@theme` resolves at build time and would
+silently do nothing. Committed to light in both system settings — a salon's
+colours are chosen against daylight, and auto-inverting them produces something
+nobody approved. Fraunces added for headings; the unused Geist Mono removed.
+
+Migration 011 — `gallery_images`, and `services.image_url` /
+`employees.photo_url` renamed to `image_path` / `photo_path`. A full Storage URL
+contains the project's own domain, and the day the prod project is created every
+stored URL points at the old one and every photograph breaks at once, silently.
+Both columns were null on every row, so the rename moved no data. `alt_text` is
+`not null` with a check against whitespace: made optional it would be skipped
+every time. No new permission key — the gallery is guarded by
+`organization.edit`, which already covers the tagline and the hours, and which
+meant not rewriting `create_organization()` for the third migration running.
+That function is how migration 009 came to exist.
+
+`middleware.ts` → `proxy.ts`, deprecated in Next 16. Done by hand rather than
+with the codemod, which renames the function but would have left every comment
+in the repo talking about middleware. `src/lib/auth/middleware.ts` →
+`session.ts` while there: it was named after a convention that has now been
+renamed out from under it. Proxy runs on the Node runtime by default where
+middleware ran on Edge.
+
+Five commits, and the first `git push` in a while — GitHub was five behind, not
+one. Everything from the services table onward had been local-only.
+
+**Proven, not just written:** The homepage was served and the HTML read back, not
+eyeballed. Five categories with counts 8, 7, 3, 3, 3 — 24, matching the seed.
+Hours collapsed into runs: "Monday – Saturday 9:00 am – 7:00 pm" and "Sunday
+9:00 am – 5:00 pm". Instagram, TikTok and Yelp in the footer and **no Facebook**,
+because it is null in the seed — the null-skipping working rather than asserted.
+
+Isolation holds with `gallery_images` — 1, 4, 8, 0, 0, 0, 0. The test now
+inserts a photograph for the other salon and counts it, so the promise that a
+missing policy makes the counts stop matching is true for this table too. The
+permission count did not move, which is the reused `organization.edit` showing
+up as an absence. `audit-tenant-safety.sql`: no rows.
+
+`alt_text` is required in the generated Insert type — a `not null` constraint
+arriving in TypeScript without anyone writing it twice. A typo in a `.select()`
+is now a compile error rather than a blank page. No deprecation warning in a
+fresh dev or build, and `/staff` still 307s to `/login` while logged out.
+
+**Broke / unresolved:** I said a logged-in owner would see a different homepage
+than a customer, then checked: there is no visible difference. `services_select_
+anon` filters `is_active` and `services_select_member` does not, but the seed
+never sets `is_active = false`, so both return the same 24 rows. The mechanism is
+real and currently invisible. Set `is_active = false` on one service to see it.
+The lesson is the ordinary one — I asserted a behaviour instead of testing it.
+
+The `site-images` bucket **still does not exist**. `supabase storage ls` returns
+nothing. The CLI manages objects but cannot create a bucket, so it is a dashboard
+click, and nothing can be uploaded until it happens. Migration 011 deliberately
+does not touch the `storage` schema, which this project does not own.
+
+There are no photographs at all. Asked to take them from the salon's social
+accounts: the Instagram profile *is* publicly readable and returned 12
+`scontent-*.cdninstagram.com` thumbnails, but those URLs are signed and expire
+within hours, so a gallery built on them is broken by next week. They are also
+compressed squares, poor as a hero image, and the people in them agreed to an
+Instagram post rather than to a commercial website. TikTok needs JavaScript and
+a login and returned nothing. The originals are on the phone that posted them —
+ask the salon, along with headshots of the real team.
+
+The homepage has never been opened on a real phone. `/login` and `/staff` still
+carry `dark:` variants while the public site is light-only, so on a dark-mode
+machine the login inputs will look dark against a light page — cosmetic, in the
+staff area, left alone rather than touching four files outside the stage. The
+five invented stylists are still in the data. DECISIONS #25 (how the site
+resolves its organization, and the second-salon workflow) and #26 (theme tokens
+in, never raw CSS from the database) are still unwritten.
+
+Twice a running dev server served 500s after files moved underneath it. Restart
+after any rename; the error means nothing.
+
+Still no Vercel deploy and no prod project. Docker still not installed, so
+`db push` warns about a catalogue cache it cannot build — third session, still
+harmless.
+
+**Next:** The `site-images` bucket, then `imageUrl()` and a hero image on the
+homepage — where per-salon personalisation actually shows up. Then services and
+pricing, which is where `price_display` finally gets a `formatPrice()` helper.
+
+---
+
 ## 2026-08-15 — Phase 3, the database half
 
 **Built:** Four migrations. `services` (007) with `price_display` taking `exact`,

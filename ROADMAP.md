@@ -1,6 +1,6 @@
 # ROADMAP.md — Amahle
 
-Last updated: 2026-08-15
+Last updated: 2026-08-17
 
 ---
 
@@ -108,7 +108,9 @@ missing its policy, the counts stop matching and you find out immediately.
 ### Phase 2 — Auth
 - [x] `/lib/auth` module: who is this, what may they do
 - [x] Login page for staff
-- [x] Session handling — middleware refreshes the token before every page load
+- [x] Session handling — `src/proxy.ts` refreshes the token before every page
+      load. It was `src/middleware.ts` until 2026-08-17; Next 16 deprecated that
+      name in favour of `proxy`
 - [x] Permission-checking helper used everywhere — `can()` and
       `requirePermission()` are the only way the app asks, and both delegate to
       `has_permission()` in Postgres. Used by `/staff`; every later page uses
@@ -116,9 +118,12 @@ missing its policy, the counts stop matching and you find out immediately.
 - [x] Confirm nothing outside `/lib/auth` calls Supabase auth — verified by
       `grep -rn '\.auth\.' src`. Re-run it after adding any page.
 
-**Not done, deliberately.** No generated database types yet, so `getProfile()`
-casts its result and TypeScript cannot check column names. `supabase gen types`
-is the fix, and it belongs with the next table rather than here.
+**Done 2026-08-17, late.** Generated database types now exist and both Supabase
+clients take `<Database>`, so a misspelled column is a compile error rather than
+a blank page. The cast in `getProfile()` is gone. **Regenerate after every
+migration** or the file describes a database that no longer exists:
+`npx supabase gen types typescript --linked --schema public >
+src/lib/supabase/database.types.ts`
 
 ### Phase 3 — Public website
 - [x] **`services` table** + RLS policies — anonymous visitors read every *active*
@@ -131,10 +136,19 @@ is the fix, and it belongs with the next table rather than here.
       five employees are invented and marked as such in `seed-kedus.sql`.
       **Real durations block the Phase 4 booking form. The fictional staff must
       be replaced before this site reaches a real domain.**
-- [ ] Homepage
+- [x] **`gallery_images` table** + RLS policies — added 2026-08-17, migration 011.
+      Guarded by `organization.edit` rather than a new key: the gallery is website
+      content in the same way the tagline and the opening hours are. The same
+      migration renamed `services.image_url` and `employees.photo_url` to
+      `image_path` and `photo_path` — a stored URL carries the project's own
+      domain and breaks the day the prod project exists
+- [x] Homepage — every word read from the database. `getOrganization()` in
+      `src/lib/site/organization.ts` is the only place a page learns which salon
+      it serves; the slug comes from `SITE_ORG_SLUG`. No page names a salon
 - [ ] Services and pricing page (driven from database)
 - [ ] Team page (driven from database)
-- [ ] Gallery
+- [ ] Gallery — the table exists; the page needs photographs from the salon.
+      Not Instagram's: those CDN URLs are signed and expire within hours
 - [ ] Contact, hours, map
 - [ ] Mobile layout checked on a real phone
 - [ ] SEO basics: titles, descriptions, Open Graph
