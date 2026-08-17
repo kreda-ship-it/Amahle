@@ -145,14 +145,95 @@ src/lib/supabase/database.types.ts`
 - [x] Homepage — every word read from the database. `getOrganization()` in
       `src/lib/site/organization.ts` is the only place a page learns which salon
       it serves; the slug comes from `SITE_ORG_SLUG`. No page names a salon
-- [ ] Services and pricing page (driven from database)
-- [ ] Team page (driven from database)
-- [ ] Gallery — the table exists; the page needs photographs from the salon.
-      Not Instagram's: those CDN URLs are signed and expire within hours
-- [ ] Contact, hours, map
+- [x] Services and pricing page (driven from database) — `formatPrice()` handles
+      all three `price_display` settings, and a service that cannot be booked
+      online still appears in full with its price and a note to call.
+      DECISIONS #23
+- [x] Team page (driven from database) — each person shown with the service
+      *categories* they cover rather than all 24 services. An employee with no
+      services renders no specialties line at all, which is the receptionist
+      case working. Verified that `anon` is refused `employees.phone` outright
+- [x] Gallery — the page is built and the empty state is what launches: a link
+      to the Instagram account they genuinely keep current, rather than an
+      empty grid. Currently holding three stock placeholders; see the launch
+      checklist. Not Instagram's own images — those CDN URLs are signed and
+      expire within hours
+- [x] Contact, hours, map — a link that opens the visitor's own map app rather
+      than an embedded map. On a phone it gives directions from where they
+      actually are, loads no third-party script, and does not watch the visitor
+      on the salon's behalf
 - [ ] Mobile layout checked on a real phone
-- [ ] SEO basics: titles, descriptions, Open Graph
-- [ ] Live at the salon's real domain
+- [x] SEO basics: titles, descriptions, Open Graph — plus `robots.txt`,
+      `sitemap.xml`, a share card generated from the salon's own name and
+      tagline, and `HairSalon` structured data carrying the address, phone and
+      all seven days of opening hours. See the launch checklist below: none of
+      it is correct until `NEXT_PUBLIC_SITE_URL` points at a real domain
+- [ ] Live at the salon's real domain — see the launch checklist below
+
+---
+
+## Before the site goes live — the launch checklist
+
+Added 2026-08-17. Everything deferred during Phase 3, in one place, so that
+"we'll do it before launch" is a list rather than a memory.
+
+**Nothing here blocks building. All of it blocks a real domain.**
+
+### Data the salon has to give us
+
+- [ ] **Replace the five invented employees.** Selam, Marta, Hanna, Yonas and
+      Sara are fictional. Real names, real positions, real bios. Someone will
+      phone up and ask for Hanna otherwise
+- [ ] **Real service durations.** Every duration in the database is invented.
+      These also block Phase 4 — availability is computed from them, so a wrong
+      duration double-books a stylist
+- [ ] **Confirm the prices.** Only the two $40 entries came from the salon's own
+      site. Every other number is a guess
+- [ ] **Photographs.** The gallery currently holds three stock interiors of
+      *other salons*, captioned PLACEHOLDER. Needed: the shopfront, 8–12
+      finished styles, and headshots of the real team. Retire the placeholders
+      with `update ... set deleted_at = now()` — never DELETE
+- [ ] **A hero image and a logo**, then set `hero_image`, `hero_image_alt` and
+      `logo` in `public_settings`
+- [ ] **Confirm the Instagram handle.** Their site says `kedus_hb`; the TikTok
+      is `kedushairsalon`. One of them may be stale
+
+Address confirmed 2026-08-17 — the DC-street-with-Maryland-ZIP question is
+settled, and the map link is correct.
+
+### Technical
+
+- [ ] **Deploy to Vercel** — Phase 0 has never been ticked
+- [ ] **Set `NEXT_PUBLIC_SITE_URL`** to the real domain. Until it is set, every
+      Open Graph tag, the sitemap and the structured data all advertise
+      `localhost:3000`. It falls back to Vercel's production URL, which is
+      right for a staging check and wrong for a launch
+- [ ] **Check the share card for real.** Paste the link into WhatsApp and
+      iMessage. This cannot be tested from localhost — those services fetch
+      the page from their own servers
+- [ ] **Mobile layout on a real phone.** Not a narrowed browser window
+- [ ] **Prod Supabase project.** Trigger is the first real customer record, not
+      launch day — but a public booking form is how that record arrives. See
+      DECISIONS #18
+
+### Ours to write
+
+- [ ] **DECISIONS #25** — how the public site resolves its organization
+      (`SITE_ORG_SLUG` now, request hostname later), and the four-step workflow
+      for onboarding a second salon. Reasoning is currently only in commit
+      `ca0f032`
+- [ ] **DECISIONS #26** — theme tokens in, never raw CSS from the database.
+      Why the token structure exists now and the database-driven half does not
+- [ ] **SESSION_LOG** entries for 2026-08-15 (app half) and 2026-08-17
+
+### The salon's own homework
+
+- [ ] **Google Business Profile.** Free, they set it up themselves, and for a
+      local salon it is worth more than every piece of SEO in this repo. The
+      code helps Google understand the site; the profile is what puts them on
+      the map with photos, hours and reviews
+
+---
 
 ### Phase 4 — Booking
 - [ ] **`customers` and `customer_flags` tables** + RLS policies. Sensitive fields — allergies, sensitivities, formulas — so field-level permissions are designed here, against real screens
