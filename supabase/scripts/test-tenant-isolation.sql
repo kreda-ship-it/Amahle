@@ -17,6 +17,9 @@
 --   007  services table; service.manage to Owner and Manager (4 → 6)
 --   008  employees and employee_services; employee.record.manage to
 --        Owner and Manager (6 → 8)
+--   011  gallery_images, and a seventh column. The permission count does
+--        NOT move: the gallery is guarded by organization.edit, which
+--        already existed, so no new key was added
 
 begin;
 
@@ -35,6 +38,11 @@ begin;
   from public.organizations o
   where o.slug = 'test-salon-two';
 
+  insert into public.gallery_images (org_id, storage_path, alt_text)
+  select o.id, 'other-salon/gallery/secret.jpg', 'Other salon secret photograph'
+  from public.organizations o
+  where o.slug = 'test-salon-two';
+
   insert into public.employees (org_id, full_name, phone)
   select o.id, 'Other Salon Secret Stylist', '555-0100'
   from public.organizations o
@@ -50,13 +58,14 @@ begin;
   set local role authenticated;
 
   -- At this moment the database holds TWO organizations, EIGHT roles,
-  -- SIXTEEN role_permissions, ONE service and ONE employee.
-  -- Expected result: 1, 4, 8, 0, 0, 0.
+  -- SIXTEEN role_permissions, ONE service, ONE employee and ONE
+  -- gallery image belonging to the other salon.
+  -- Expected result: 1, 4, 8, 0, 0, 0, 0.
   --
-  -- The last three columns are the point. The other organization, its
-  -- service and its stylist all exist. None of them is visible. Not
-  -- because the query filtered them out — because Postgres refuses to
-  -- hand them over.
+  -- The last four columns are the point. The other organization, its
+  -- service, its stylist and its photograph all exist. None of them is
+  -- visible. Not because the query filtered them out — because Postgres
+  -- refuses to hand them over.
   select (select count(*) from public.organizations)                              as organizations_visible,
          (select count(*) from public.roles)                                      as roles_visible,
          (select count(*) from public.role_permissions)                           as role_permissions_visible,
@@ -64,6 +73,8 @@ begin;
          (select count(*) from public.services
            where name = 'Other Salon Secret Service')                             as other_service_visible,
          (select count(*) from public.employees
-           where full_name = 'Other Salon Secret Stylist')                        as other_employee_visible;
+           where full_name = 'Other Salon Secret Stylist')                        as other_employee_visible,
+         (select count(*) from public.gallery_images
+           where alt_text = 'Other salon secret photograph')                      as other_image_visible;
 
 rollback;
