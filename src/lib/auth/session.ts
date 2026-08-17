@@ -16,6 +16,11 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/env";
  *
  * This lives in /lib/auth rather than /lib/supabase because it calls
  * supabase.auth, and those calls do not leave this folder.
+ *
+ * The file was `middleware.ts` and is now `session.ts`. It is named for what
+ * it does rather than for whichever Next.js convention invokes it — that
+ * convention has just been renamed once already, and refreshing a session is
+ * the same job regardless of what the framework calls the file above it.
  */
 export async function updateSession(request: NextRequest) {
   // The response we will eventually send. It gets rebuilt below if the
