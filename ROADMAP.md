@@ -184,6 +184,11 @@ Added 2026-08-17. Everything deferred during Phase 3, in one place, so that
 - [ ] **Replace the five invented employees.** Selam, Marta, Hanna, Yonas and
       Sara are fictional. Real names, real positions, real bios. Someone will
       phone up and ask for Hanna otherwise
+- [ ] **The real rota.** `seed-working-hours.sql` gives every bookable employee
+      the salon's full opening hours with one invented day off. Who actually
+      works which days, and whether anyone works part days, is the salon's to
+      tell us. Availability is computed from it, so a wrong rota offers customers
+      times nobody is there for
 - [ ] **Real service durations.** Every duration in the database is invented.
       These also block Phase 4 — availability is computed from them, so a wrong
       duration double-books a stylist
@@ -260,7 +265,13 @@ settled, and the map link is correct.
       permission key: editing a rota is `employee.record.manage`. No `anon`
       grants, which is why availability has to be a database function the booking
       form calls rather than a query the browser runs
-- [ ] Seed the salon's working hours
+- [x] **Seed the salon's working hours** — `supabase/scripts/seed-working-hours.sql`,
+      2026-08-18. **Placeholder, and invented like the five employees it fills in
+      for.** Every bookable employee works the salon's own opening hours, read
+      live from `public_settings` rather than typed in, with one day off each
+      cycling Mon/Tue/Wed/Thu/Sun — never Friday or Saturday. It refuses to run
+      twice, because the table has no unique constraint (split shifts are normal)
+      and a second run would silently double every rota
 - [x] **`createAppointment()` — the one canonical creation path** — migration
       015 plus `src/lib/appointments/create.ts`, 2026-08-18. The rules are in
       Postgres and that is forced, not chosen: a customer booking online arrives
