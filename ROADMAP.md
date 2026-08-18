@@ -268,7 +268,14 @@ settled, and the map link is correct.
       application code cannot write their booking at all. `source` is derived
       from who is calling rather than passed in. Proven by
       `supabase/scripts/test-create-appointment.sql` — five checks, all passing
-- [ ] Availability calculation (service duration, buffers, working hours)
+- [x] **Availability calculation** — migration 016, 2026-08-18.
+      `get_available_slots()`, computed live from the rota, time off and
+      existing appointments. Nothing precomputed, so there is no cache to go
+      stale. Customers only: staff may overrule opening hours and are stopped
+      only by the exclusion constraint. Migration 017 made `buffer_minutes`
+      nullable — null inherits the salon's `default_buffer_minutes`, so a
+      service added later cannot silently claim it needs no gap. Proven by
+      `supabase/scripts/test-availability.sql`, eight checks
 - [x] **Conflict detection** — migration 014. Not a check: an exclusion
       constraint on `(employee_id, tstzrange(starts_at, blocked_until))`, so the
       second booking is refused by the database. Checking first leaves a gap
