@@ -341,7 +341,7 @@ settled, and the map link is correct.
             so everything it returns is written to be harmless in a stranger's
             hands. Not indexed. No cancel button — cancelling online is not in
             v1, and a button that quietly does nothing is worse than none
-      - [ ] **Stage D — several services for one customer.** "Blow dry and trim
+      - [x] **Stage D — several services for one customer**, 2026-08-19. "Blow dry and trim
             for her." **No buffer between them** — the buffer resets the station
             between *customers*, so a chained booking is duration + duration end
             to end with the buffer applied once at the finish. Getting that

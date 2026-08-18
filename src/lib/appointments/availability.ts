@@ -60,11 +60,19 @@ export async function getBookableServices(
   return data ?? [];
 }
 
-/** One service, or null if it is not bookable online or does not exist. */
-export async function getBookableService(
+/**
+ * The chosen services, in the order the customer chose them.
+ *
+ * Order is preserved deliberately: a visit is performed in the order it was
+ * built, and the database schedules the rows the same way. Returns fewer than
+ * asked for if any id is unknown, which the caller treats as a stale link.
+ */
+export async function getBookableServices_byIds(
   orgId: string,
-  serviceId: string,
-): Promise<BookableService | null> {
+  serviceIds: string[],
+): Promise<BookableService[]> {
+  if (serviceIds.length === 0) return [];
+
   const supabase = await createSupabaseServerClient();
 
   const { data } = await supabase
@@ -73,41 +81,74 @@ export async function getBookableService(
       "id, name, description, category, price, price_display, duration_minutes",
     )
     .eq("org_id", orgId)
-    .eq("id", serviceId)
     .eq("is_bookable_online", true)
-    .maybeSingle();
+    .in("id", serviceIds);
 
-  return data ?? null;
+  const found = new Map((data ?? []).map((service) => [service.id, service]));
+
+  // Keep the customer's order, and keep duplicates — booking the same service
+  // twice is unusual but not wrong, and the database counts it twice.
+  return serviceIds.flatMap((id) => {
+    const service = found.get(id);
+    return service ? [service] : [];
+  });
 }
 
 /**
- * Who performs this service, for the "choose a stylist" step.
+ * Who can perform ALL of these services, for the "choose a stylist" step.
  *
- * Reads through `employee_services`, so it lists exactly the people the salon
- * has said can do this work. `phone` and `email` are absent and cannot be
- * added — migration 008 never granted them to `anon`.
+ * All, not any: a visit is one person from start to finish, so a stylist who
+ * does the blow dry but not the trim cannot take the booking. This mirrors the
+ * `having count(distinct …)` in `get_available_slots`, and the two must agree
+ * — offering a stylist the availability function will not is how a form ends
+ * up showing a person with no times.
+ *
+ * `phone` and `email` are absent and cannot be added: migration 008 never
+ * granted them to `anon`.
  */
-export async function getEmployeesForService(
+export async function getEmployeesForServices(
   orgId: string,
-  serviceId: string,
+  serviceIds: string[],
 ): Promise<ServiceEmployee[]> {
+  if (serviceIds.length === 0) return [];
+
   const supabase = await createSupabaseServerClient();
+  const wanted = new Set(serviceIds);
 
   const { data } = await supabase
     .from("employee_services")
-    .select("employees!inner(id, full_name, is_bookable, display_order)")
+    .select(
+      "service_id, employees!inner(id, full_name, is_bookable, display_order)",
+    )
     .eq("org_id", orgId)
-    .eq("service_id", serviceId);
+    .in("service_id", [...wanted]);
 
-  const employees = (data ?? [])
-    .map((row) => row.employees)
-    .filter((employee) => employee !== null && employee.is_bookable)
-    .sort((a, b) => a.display_order - b.display_order);
+  const covers = new Map<string, { employee: ServiceEmployee & { order: number }; services: Set<string> }>();
 
-  return employees.map((employee) => ({
-    id: employee.id,
-    full_name: employee.full_name,
-  }));
+  for (const row of data ?? []) {
+    const employee = row.employees;
+    if (!employee || !employee.is_bookable) continue;
+
+    const existing = covers.get(employee.id);
+
+    if (existing) {
+      existing.services.add(row.service_id);
+    } else {
+      covers.set(employee.id, {
+        employee: {
+          id: employee.id,
+          full_name: employee.full_name,
+          order: employee.display_order,
+        },
+        services: new Set([row.service_id]),
+      });
+    }
+  }
+
+  return [...covers.values()]
+    .filter((entry) => entry.services.size === wanted.size)
+    .sort((a, b) => a.employee.order - b.employee.order)
+    .map(({ employee }) => ({ id: employee.id, full_name: employee.full_name }));
 }
 
 /**
@@ -118,22 +159,24 @@ export async function getEmployeesForService(
  * know which days have anything at all before you pick one, and asking
  * fourteen times would give fourteen slightly different moments of truth.
  *
- * `employeeId` is optional. Leaving it out means "anyone who does this", and
+ * `employeeId` is optional. Leaving it out means "anyone who does all of it", and
  * every slot still says which stylist it belongs to — that is what lets the
  * form offer someone else at the same time when their first choice is taken.
  */
 export async function getAvailableSlots(input: {
   orgId: string;
-  serviceId: string;
+  serviceIds: string[];
   fromDate: string;
   toDate?: string;
   employeeId?: string | null;
 }): Promise<Slot[]> {
+  if (input.serviceIds.length === 0) return [];
+
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase.rpc("get_available_slots", {
     p_org_id: input.orgId,
-    p_service_id: input.serviceId,
+    p_service_ids: input.serviceIds,
     p_from_date: input.fromDate,
     p_to_date: input.toDate ?? undefined,
     p_employee_id: input.employeeId ?? undefined,

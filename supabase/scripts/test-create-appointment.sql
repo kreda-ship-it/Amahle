@@ -11,7 +11,7 @@
 -- is recorded as source = 'online' — which is exactly the path worth
 -- testing, because it is the one that cannot use ordinary privileges.
 --
--- Expected: five rows, every outcome starting PASS.
+-- Expected: seven rows, every outcome starting PASS.
 
 begin;
 
@@ -34,6 +34,9 @@ declare
   v_source      text;
   v_duration    int;
   v_buffer      int;
+  v_second_service uuid;
+  v_chain       uuid;
+  v_rows        int;
 begin
   select o.id into v_org_id
   from public.organizations o
@@ -67,7 +70,7 @@ begin
   -- ---------------------------------------------------------------
   v_first := public.create_appointment(
     p_org_id         => v_org_id,
-    p_service_id     => v_service_id,
+    p_service_ids    => array[v_service_id],
     p_employee_id    => v_employee_id,
     p_starts_at      => v_when,
     p_customer_name  => 'Test Customer',
@@ -76,7 +79,7 @@ begin
 
   select a.ends_at, a.blocked_until, a.price, a.source, a.customer_id
   into v_ends, v_blocked, v_price, v_source, v_customer_a
-  from public.appointments a where a.id = v_first;
+  from public.appointments a where a.visit_id = v_first;
 
   insert into results values (
     '1. booking created',
@@ -104,7 +107,7 @@ begin
   begin
     perform public.create_appointment(
       p_org_id         => v_org_id,
-      p_service_id     => v_service_id,
+      p_service_ids    => array[v_service_id],
       p_employee_id    => v_employee_id,
       p_starts_at      => v_when,
       p_customer_name  => 'Someone Else',
@@ -123,7 +126,7 @@ begin
   -- ---------------------------------------------------------------
   v_second := public.create_appointment(
     p_org_id         => v_org_id,
-    p_service_id     => v_service_id,
+    p_service_ids    => array[v_service_id],
     p_employee_id    => v_employee_id,
     p_starts_at      => v_when + interval '1 day',
     p_customer_name  => 'Test Customer Typed Differently',
@@ -131,12 +134,64 @@ begin
   );
 
   select a.customer_id into v_customer_b
-  from public.appointments a where a.id = v_second;
+  from public.appointments a where a.visit_id = v_second;
 
   insert into results values (
     '5. same number, different spelling, one customer',
     case when v_customer_a = v_customer_b then 'PASS'
          else 'FAIL — two customer records for one phone number' end);
+
+  -- ---------------------------------------------------------------
+  -- 6-7. A visit of two services, back to back.
+  --
+  -- The buffer resets the station between CUSTOMERS, so there is none
+  -- between two services on the same head. The first ends exactly
+  -- where the second begins; only the last one is followed by cleanup.
+  -- ---------------------------------------------------------------
+  select es.service_id into v_second_service
+  from public.employee_services es
+  join public.services s on s.id = es.service_id
+  where es.employee_id = v_employee_id
+    and es.deleted_at is null
+    and s.deleted_at is null and s.is_active and s.is_bookable_online
+    and s.id <> v_service_id
+  limit 1;
+
+  if v_second_service is null then
+    insert into results values
+      ('6. chained visit', 'SKIPPED — this employee performs only one bookable service');
+    insert into results values
+      ('7. buffer follows the last service only', 'SKIPPED');
+  else
+    v_chain := public.create_appointment(
+      p_org_id         => v_org_id,
+      p_service_ids    => array[v_service_id, v_second_service],
+      p_employee_id    => v_employee_id,
+      p_starts_at      => v_when + interval '3 days',
+      p_customer_name  => 'Chain Test',
+      p_customer_phone => '202 555 0166');
+
+    select count(*) into v_rows
+    from public.appointments where visit_id = v_chain;
+
+    insert into results values (
+      '6. a two-service visit creates two rows sharing one visit_id',
+      case when v_rows = 2 then 'PASS'
+           else format('FAIL — %s rows', v_rows) end);
+
+    -- The first row's reserved time must end exactly where the second
+    -- starts. Any gap is a buffer that should not be there.
+    insert into results values (
+      '7. no buffer between them; cleanup follows the last only',
+      case when (
+        select a1.blocked_until = a2.starts_at and a1.ends_at = a1.blocked_until
+        from public.appointments a1
+        join public.appointments a2
+          on a2.visit_id = a1.visit_id and a2.starts_at > a1.starts_at
+        where a1.visit_id = v_chain
+        limit 1
+      ) then 'PASS' else 'FAIL — a gap appeared between two services' end);
+  end if;
 
 exception
   when others then

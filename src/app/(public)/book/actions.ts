@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import {
   getAvailableSlots,
-  getEmployeesForService,
+  getEmployeesForServices,
 } from "@/lib/appointments/availability";
 import { createAppointment } from "@/lib/appointments/create";
 import { salonDateKey, salonTime } from "@/lib/site/datetime";
@@ -47,7 +47,10 @@ export async function submitBooking(
 ): Promise<BookingState> {
   const org = await getOrganization();
 
-  const serviceId = text(formData, "serviceId");
+  const serviceIds = text(formData, "serviceIds")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
   const employeeId = text(formData, "employeeId");
   const startsAt = text(formData, "startsAt");
   const name = text(formData, "customerName");
@@ -55,7 +58,7 @@ export async function submitBooking(
   const email = text(formData, "customerEmail");
   const notes = text(formData, "notes");
 
-  if (!serviceId || !employeeId || !startsAt) {
+  if (serviceIds.length === 0 || !employeeId || !startsAt) {
     return {
       status: "error",
       message:
@@ -79,7 +82,7 @@ export async function submitBooking(
 
   const result = await createAppointment({
     organizationId: org.id,
-    serviceId,
+    serviceIds,
     employeeId,
     startsAt,
     customerName: name,
@@ -92,7 +95,7 @@ export async function submitBooking(
     // Outside any try/catch on purpose: redirect() works by throwing, and a
     // catch here would swallow it and leave the customer staring at the form
     // after their appointment had been made.
-    redirect(`/book/confirmed/${result.appointmentId}`);
+    redirect(`/book/confirmed/${result.visitId}`);
   }
 
   if (result.reason === "slot_taken") {
@@ -102,8 +105,7 @@ export async function submitBooking(
       alternatives: await findAlternatives({
         orgId: org.id,
         timezone: org.timezone,
-        serviceId,
-        employeeId,
+        serviceIds,
         startsAt,
       }),
     };
@@ -125,8 +127,7 @@ export async function submitBooking(
 async function findAlternatives(input: {
   orgId: string;
   timezone: string;
-  serviceId: string;
-  employeeId: string;
+  serviceIds: string[];
   startsAt: string;
 }): Promise<Alternative[]> {
   const day = salonDateKey(input.startsAt, input.timezone);
@@ -134,11 +135,11 @@ async function findAlternatives(input: {
   const [slots, employees] = await Promise.all([
     getAvailableSlots({
       orgId: input.orgId,
-      serviceId: input.serviceId,
+      serviceIds: input.serviceIds,
       fromDate: day,
       toDate: day,
     }),
-    getEmployeesForService(input.orgId, input.serviceId),
+    getEmployeesForServices(input.orgId, input.serviceIds),
   ]);
 
   const wanted = new Date(input.startsAt).getTime();
@@ -162,7 +163,7 @@ async function findAlternatives(input: {
 
   return scored.map(({ slot, sameTime }) => {
     const query = new URLSearchParams({
-      service: input.serviceId,
+      services: input.serviceIds.join(","),
       date: day,
       at: slot.startsAt,
     });

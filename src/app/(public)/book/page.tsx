@@ -3,9 +3,10 @@ import Link from "next/link";
 
 import {
   getAvailableSlots,
-  getBookableService,
   getBookableServices,
-  getEmployeesForService,
+  getBookableServices_byIds,
+  getEmployeesForServices,
+  type BookableService,
 } from "@/lib/appointments/availability";
 import {
   salonDateKey,
@@ -20,43 +21,44 @@ import { formatDuration, formatPrice } from "@/lib/site/pricing";
 import { BookingForm } from "./booking-form";
 
 /**
- * The booking page — choosing what, with whom, and when.
+ * The booking page — what, with whom, and when.
  *
- * Every choice lives in the URL rather than in the browser's memory. That is
- * the one design decision here worth defending, and it has three reasons:
+ * Every choice lives in the URL rather than in the browser's memory:
  *
  *   1. The back button works. Someone half-way through booking is exactly the
- *      person who hits back, and a page holding its state in React would lose
- *      everything.
+ *      person who hits back, and a page holding state in React would lose it.
  *   2. Times are fetched fresh on every step. A slot list sitting in a browser
- *      goes stale while someone deliberates, and the longer they take the more
- *      likely they choose something already gone.
- *   3. Nothing is calculated here. The server asks the database and renders
- *      the answer, which is what the whole architecture requires — `anon` has
- *      no privilege on the rota or the appointments it is derived from.
+ *      goes stale while someone deliberates.
+ *   3. Nothing is calculated here. `anon` has no privilege on the rota or on
+ *      appointments, so this page could not work out availability even if we
+ *      wanted it to.
+ *
+ * Services are a LIST — `?services=a,b` — because a visit can be a blow dry
+ * and a trim. One service is simply a list of one, so there is no second code
+ * path for the common case.
  */
 
 export const metadata: Metadata = {
   title: "Book an appointment",
   description:
-    "Choose a service, pick a time that suits you, and book online in under a minute.",
+    "Choose your services, pick a time that suits you, and book online in under a minute.",
 };
 
 /*
- * Never cached, and this is not caution. A cached availability page shows one
- * customer the times another customer took ten minutes ago, and the first they
- * would learn of it is a booking that fails.
+ * Never cached. A cached availability page shows one customer the times
+ * another took ten minutes ago, and the first they would learn of it is a
+ * booking that fails.
  */
 export const dynamic = "force-dynamic";
 
-/** How far ahead the day chooser looks. */
 const DAYS_SHOWN = 14;
 
 type SearchParams = {
-  service?: string;
+  services?: string;
   employee?: string;
   date?: string;
   at?: string;
+  add?: string;
 };
 
 export default async function BookPage({
@@ -67,35 +69,26 @@ export default async function BookPage({
   const org = await getOrganization();
   const params = await searchParams;
 
-  if (!params.service) {
-    return <ChooseService orgId={org.id} currency={org.currency} />;
-  }
+  const requested = (params.services ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
 
-  const service = await getBookableService(org.id, params.service);
+  const chosenServices = await getBookableServices_byIds(org.id, requested);
 
-  if (!service) {
+  // No services yet, or they asked to add another.
+  if (chosenServices.length === 0 || params.add) {
     return (
-      <Shell>
-        <h1 className="font-display text-3xl font-semibold">
-          That service isn&rsquo;t available to book online
-        </h1>
-
-        <p className="mt-4 text-ink-muted text-pretty">
-          It may have changed since you last looked. Choose another below, or
-          call us and we will sort it out.
-        </p>
-
-        <Link
-          href="/book"
-          className="mt-8 inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
-        >
-          See what can be booked
-        </Link>
-      </Shell>
+      <ChooseService
+        orgId={org.id}
+        currency={org.currency}
+        already={chosenServices}
+      />
     );
   }
 
-  const employees = await getEmployeesForService(org.id, service.id);
+  const serviceIds = chosenServices.map((service) => service.id);
+  const employees = await getEmployeesForServices(org.id, serviceIds);
   const days = salonDaysFrom(org.timezone, DAYS_SHOWN);
 
   // One call for the whole fortnight. The day chooser has to know which days
@@ -103,7 +96,7 @@ export default async function BookPage({
   // give fourteen slightly different moments of truth.
   const slots = await getAvailableSlots({
     orgId: org.id,
-    serviceId: service.id,
+    serviceIds,
     fromDate: days[0],
     toDate: days[days.length - 1],
     employeeId: params.employee ?? null,
@@ -119,9 +112,6 @@ export default async function BookPage({
     else byDay.set(key, [slot]);
   }
 
-  // The requested day if it has anything, otherwise the first that does. A
-  // customer who lands on a fully-booked Tuesday should see the next real
-  // option rather than an empty page.
   const selectedDay =
     params.date && byDay.has(params.date)
       ? params.date
@@ -135,11 +125,16 @@ export default async function BookPage({
     ? (slots.find((slot) => slot.startsAt === params.at) ?? null)
     : null;
 
+  const totalMinutes = chosenServices.reduce(
+    (sum, service) => sum + service.duration_minutes,
+    0,
+  );
+
   const href = (next: Partial<SearchParams>) => {
     const query = new URLSearchParams();
     const merged = { ...params, ...next };
 
-    for (const key of ["service", "employee", "date", "at"] as const) {
+    for (const key of ["services", "employee", "date", "at", "add"] as const) {
       const value = merged[key];
       if (value) query.set(key, value);
     }
@@ -147,33 +142,77 @@ export default async function BookPage({
     return `/book?${query.toString()}`;
   };
 
+  /** The same list with one entry removed, by position — duplicates are legal. */
+  const withoutIndex = (index: number) =>
+    serviceIds.filter((_, i) => i !== index).join(",");
+
   return (
     <Shell>
       <h1 className="font-display text-3xl font-semibold sm:text-4xl">
         Book an appointment
       </h1>
 
-      {/* What they picked, and how to change it. */}
+      {/* What they are having. */}
       <section className="mt-8 rounded-2xl bg-surface-sunk px-6 py-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-          <h2 className="font-medium">{service.name}</h2>
+        <h2 className="font-display text-lg font-semibold">Your visit</h2>
 
-          <Link href="/book" className="text-sm text-brand hover:underline">
-            Change service
+        <ul className="mt-3 divide-y divide-line">
+          {chosenServices.map((service, index) => (
+            <li
+              key={`${service.id}-${index}`}
+              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5"
+            >
+              <span className="font-medium">{service.name}</span>
+
+              <span className="flex items-baseline gap-4 text-sm text-ink-muted">
+                <span>{formatDuration(service.duration_minutes)}</span>
+                <span>
+                  {formatPrice(
+                    service.price,
+                    service.price_display,
+                    org.currency,
+                  ) ?? "Call for a price"}
+                </span>
+
+                {/* Removing the only service returns you to the chooser. */}
+                <Link
+                  href={
+                    chosenServices.length === 1
+                      ? "/book"
+                      : href({
+                          services: withoutIndex(index),
+                          at: undefined,
+                          employee: undefined,
+                        })
+                  }
+                  className="text-brand hover:underline"
+                >
+                  Remove
+                </Link>
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+          <Link
+            href={href({ add: "1" })}
+            className="text-sm font-medium text-brand hover:underline"
+          >
+            + Add another service
           </Link>
-        </div>
 
-        <p className="mt-1 text-sm text-ink-muted">
-          {[
-            formatPrice(service.price, service.price_display, org.currency),
-            formatDuration(service.duration_minutes),
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
+          <p className="text-sm text-ink-muted">
+            About {formatDuration(totalMinutes)} in total
+          </p>
+        </div>
       </section>
 
-      {/* Who. "Anyone" is first because it is the answer most people want. */}
+      {/*
+        Only the stylists who can do EVERY service, which is why adding a
+        second service can shorten this list. A visit is one person from start
+        to finish.
+      */}
       {employees.length > 1 && (
         <section className="mt-10">
           <h2 className="font-display text-xl font-semibold">
@@ -201,99 +240,111 @@ export default async function BookPage({
         </section>
       )}
 
+      {employees.length === 0 && (
+        <p className="mt-10 rounded-2xl bg-surface-sunk px-6 py-5 text-pretty">
+          Nobody on the team does all of those together. Try removing one, or
+          call us and we will arrange it between two of us.
+        </p>
+      )}
+
       {/* When. */}
-      <section className="mt-10">
-        <h2 className="font-display text-xl font-semibold">Pick a day</h2>
+      {employees.length > 0 && (
+        <>
+          <section className="mt-10">
+            <h2 className="font-display text-xl font-semibold">Pick a day</h2>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {days.map((day) => {
-            const available = byDay.has(day);
+            <div className="mt-4 flex flex-wrap gap-2">
+              {days.map((day) => {
+                const available = byDay.has(day);
 
-            return available ? (
-              <Chip
-                key={day}
-                href={href({ date: day, at: undefined })}
-                active={day === selectedDay}
-              >
-                {salonDayLabel(day)}
-              </Chip>
-            ) : (
-              <span
-                key={day}
-                className="rounded-full border border-line px-4 py-2 text-sm text-ink-muted opacity-50"
-                title="Fully booked"
-              >
-                {salonDayLabel(day)}
-              </span>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Times. */}
-      <section className="mt-10">
-        <h2 className="font-display text-xl font-semibold">
-          {selectedDay ? salonDayLabelLong(selectedDay) : "Available times"}
-        </h2>
-
-        {times.length === 0 ? (
-          <p className="mt-4 text-ink-muted text-pretty">
-            Nothing free in the next two weeks for this service. Call us and we
-            will find you something.
-          </p>
-        ) : (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {times.map((slot) => (
-              <Chip
-                key={`${slot.startsAt}-${slot.employeeId}`}
-                href={href({ at: slot.startsAt })}
-                active={params.at === slot.startsAt}
-              >
-                <span className="font-medium">
-                  {salonTime(slot.startsAt, org.timezone)}
-                </span>
-
-                {/* Only worth saying when they did not choose a person. */}
-                {!params.employee && (
-                  <span className="ml-2 text-ink-muted">
-                    {nameFor(slot.employeeId)}
+                return available ? (
+                  <Chip
+                    key={day}
+                    href={href({ date: day, at: undefined })}
+                    active={day === selectedDay}
+                  >
+                    {salonDayLabel(day)}
+                  </Chip>
+                ) : (
+                  <span
+                    key={day}
+                    className="rounded-full border border-line px-4 py-2 text-sm text-ink-muted opacity-50"
+                    title="Nothing free"
+                  >
+                    {salonDayLabel(day)}
                   </span>
-                )}
-              </Chip>
-            ))}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          </section>
 
-        {/*
-          Not a fallback — the salon genuinely can fit people in. Staff booking
-          deliberately ignores these times, because the receptionist may
-          overrule the opening hours and squeeze someone between two bookings.
-          Without this line a customer sees five options, assumes the day is
-          full, and books elsewhere.
-        */}
-        {org.phone && (
-          <p className="mt-6 text-sm text-ink-muted text-pretty">
-            Don&rsquo;t see a time that works?{" "}
-            <a
-              href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-              className="font-medium text-brand hover:underline"
-            >
-              Call {org.phone}
-            </a>{" "}
-            — we can often fit you in.
-          </p>
-        )}
-      </section>
+          <section className="mt-10">
+            <h2 className="font-display text-xl font-semibold">
+              {selectedDay ? salonDayLabelLong(selectedDay) : "Available times"}
+            </h2>
+
+            {times.length === 0 ? (
+              <p className="mt-4 text-ink-muted text-pretty">
+                Nothing free in the next two weeks for that combination. Try
+                removing a service, or call us.
+              </p>
+            ) : (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {times.map((slot) => (
+                  <Chip
+                    key={`${slot.startsAt}-${slot.employeeId}`}
+                    href={href({ at: slot.startsAt })}
+                    active={params.at === slot.startsAt}
+                  >
+                    <span className="font-medium">
+                      {salonTime(slot.startsAt, org.timezone)}
+                    </span>
+
+                    {!params.employee && (
+                      <span className="ml-2 text-ink-muted">
+                        {nameFor(slot.employeeId)}
+                      </span>
+                    )}
+                  </Chip>
+                ))}
+              </div>
+            )}
+
+            {/*
+              Not a fallback. Staff booking deliberately ignores these times,
+              because the receptionist may overrule the opening hours and
+              squeeze someone in. Without this line a customer sees five
+              options, assumes the day is full, and books elsewhere.
+            */}
+            {org.phone && (
+              <p className="mt-6 text-sm text-ink-muted text-pretty">
+                Don&rsquo;t see a time that works?{" "}
+                <a
+                  href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
+                  className="font-medium text-brand hover:underline"
+                >
+                  Call {org.phone}
+                </a>{" "}
+                — we can often fit you in.
+              </p>
+            )}
+          </section>
+        </>
+      )}
 
       {chosen && (
         <section className="mt-10 rounded-2xl border border-line px-6 py-5">
           <h2 className="font-display text-xl font-semibold">Your details</h2>
 
           <BookingForm
-            serviceId={service.id}
+            serviceIds={serviceIds.join(",")}
             employeeId={chosen.employeeId}
             startsAt={chosen.startsAt}
-            summary={`${service.name} with ${nameFor(chosen.employeeId)} on ${salonDayLabelLong(
+            summary={`${chosenServices
+              .map((service) => service.name)
+              .join(" and ")} with ${nameFor(
+              chosen.employeeId,
+            )} on ${salonDayLabelLong(
               salonDateKey(chosen.startsAt, org.timezone),
             )} at ${salonTime(chosen.startsAt, org.timezone)}.`}
           />
@@ -303,24 +354,30 @@ export default async function BookPage({
   );
 }
 
-/** The first step: what are we booking? */
+/** Choosing a service — the first step, and the "add another" step. */
 async function ChooseService({
   orgId,
   currency,
+  already,
 }: {
   orgId: string;
   currency: string;
+  already: BookableService[];
 }) {
   const services = await getBookableServices(orgId);
+  const adding = already.length > 0;
+  const chosenIds = already.map((service) => service.id);
 
   return (
     <Shell>
       <h1 className="font-display text-3xl font-semibold sm:text-4xl">
-        Book an appointment
+        {adding ? "Add another service" : "Book an appointment"}
       </h1>
 
       <p className="mt-4 text-lg text-ink-muted text-pretty">
-        Choose a service to see when we are free.
+        {adding
+          ? `Adding to ${already.map((service) => service.name).join(" and ")}. Anything else done at the same visit is with the same stylist, one after the other.`
+          : "Choose a service to see when we are free."}
       </p>
 
       {services.length === 0 ? (
@@ -339,7 +396,7 @@ async function ChooseService({
             return (
               <li key={service.id}>
                 <Link
-                  href={`/book?service=${service.id}`}
+                  href={`/book?services=${[...chosenIds, service.id].join(",")}`}
                   className="flex flex-wrap justify-between gap-x-6 gap-y-2 py-5 transition-colors hover:text-brand"
                 >
                   <div className="min-w-56 flex-1">
@@ -368,11 +425,23 @@ async function ChooseService({
         </ul>
       )}
 
+      {adding && (
+        <Link
+          href={`/book?services=${chosenIds.join(",")}`}
+          className="mt-8 inline-block text-sm font-medium text-brand hover:underline"
+        >
+          ← Back without adding
+        </Link>
+      )}
+
       {/* DECISIONS #23 — the price list is longer than this list, on purpose. */}
       <p className="mt-12 rounded-2xl bg-surface-sunk px-6 py-5 text-sm text-ink-muted text-pretty">
         Our longer braiding appointments are booked by phone rather than online,
         so we can plan the day with you first. They are all on the{" "}
-        <Link href="/services" className="font-medium text-brand hover:underline">
+        <Link
+          href="/services"
+          className="font-medium text-brand hover:underline"
+        >
           services and pricing page
         </Link>
         .

@@ -72,6 +72,8 @@ export default async function ConfirmedPage({
     booking.status === "cancelled" || booking.status === "no_show";
 
   const day = salonDayLabelLong(salonDateKey(booking.startsAt, org.timezone));
+  // First service to last: what the customer needs to set aside, whether they
+  // booked one thing or three.
   const from = salonTime(booking.startsAt, org.timezone);
   const to = salonTime(booking.endsAt, org.timezone);
 
@@ -105,12 +107,18 @@ export default async function ConfirmedPage({
           cancelled ? "opacity-60" : ""
         }`}
       >
-        <Row label="Service" value={booking.serviceName} />
+        {booking.services.map((service, index) => (
+          <Row
+            key={`${service.serviceName}-${index}`}
+            label={booking.services.length > 1 ? `Service ${index + 1}` : "Service"}
+            value={service.serviceName}
+          />
+        ))}
         <Row label="With" value={booking.employeeName} />
         <Row label="When" value={`${day}, ${from} – ${to}`} />
         <Row
-          label="Price"
-          value={formatPrice(booking.price, "exact", org.currency) ?? "—"}
+          label={booking.services.length > 1 ? "Total" : "Price"}
+          value={formatPrice(booking.total, "exact", org.currency) ?? "—"}
         />
       </dl>
 

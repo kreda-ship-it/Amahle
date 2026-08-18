@@ -21,12 +21,13 @@ import { submitBooking, type BookingState } from "./actions";
 const initial: BookingState = { status: "idle" };
 
 export function BookingForm({
-  serviceId,
+  serviceIds,
   employeeId,
   startsAt,
   summary,
 }: {
-  serviceId: string;
+  /** Comma-separated, in the order they will be performed. */
+  serviceIds: string;
   employeeId: string;
   startsAt: string;
   summary: string;
@@ -35,7 +36,7 @@ export function BookingForm({
 
   return (
     <form action={action} className="mt-6">
-      <input type="hidden" name="serviceId" value={serviceId} />
+      <input type="hidden" name="serviceIds" value={serviceIds} />
       <input type="hidden" name="employeeId" value={employeeId} />
       <input type="hidden" name="startsAt" value={startsAt} />
 

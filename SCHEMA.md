@@ -412,9 +412,10 @@ The core table. Written only through `createAppointment()`.
 
 | Column | Type | Meaning |
 |---|---|---|
+| `visit_id` | uuid | Which rows are one trip to the salon. **Always set**, even for a single service. This is the customer's booking reference. |
 | `customer_id` | uuid | |
 | `employee_id` | uuid | |
-| `service_id` | uuid | |
+| `service_id` | uuid | One row is one service. Several services in a sitting are several rows sharing a `visit_id`. |
 | `starts_at` | timestamptz | |
 | `ends_at` | timestamptz | Computed from service duration |
 | `status` | text | See below |
@@ -441,6 +442,26 @@ are. Decided 2026-08-18, matching how the salon already works by phone.
 **Nothing moves a booking from `pending` to `confirmed` yet.** It is a staff
 action and needs the calendar, so every appointment sits at `pending` until
 Phase 5.
+
+**A visit of one is still a visit.** `visit_id` is set on every appointment, so
+there is no "part of a group" flag and no special case — the same code path
+serves a trim and a trim-with-blow-dry, and there is no second path to get
+wrong.
+
+**Chained services carry no buffer between them.** `buffer_minutes` resets the
+station between *customers*, and the same head does not need cleaning up
+halfway through. So each row but the last ends exactly where the next begins,
+and only the final one is followed by cleanup:
+
+```
+45 min blow dry   10:00 - 10:45   blocked until 10:45
+30 min trim       10:45 - 11:15   blocked until 11:25   (+10 buffer)
+```
+
+The exclusion constraint is content with rows that touch: its ranges are
+half-open, so ending where the next starts is not an overlap. Adding a buffer
+between them would cost the salon ten minutes on every combined booking and
+nobody would ever see it — the day would simply be emptier than it should be.
 
 `source` matters: it tells us how much of the salon's booking has actually moved
 online, which is the real measure of whether this project worked.
@@ -474,8 +495,14 @@ only for real customers.
 
 ## Which times a customer may choose
 
-`get_available_slots(org, service, from_date, to_date, employee)`, migration 016.
-Returns `(slot_starts_at, slot_employee_id)`. The employee is in the result
+`get_available_slots(org, service_ids[], from_date, to_date, employee)`,
+migrations 016 and 021. Returns `(slot_starts_at, slot_employee_id)`.
+
+**Several services means one continuous stretch with one stylist.** Total time
+is the sum of the durations, the trailing buffer comes from the last service,
+and only stylists who perform *every* one are offered — a visit split across two
+specialists is a phone call, because finding a chain of stylists whose free time
+joins up is a different and much worse problem than finding one gap. The employee is in the result
 because `employee` may be null, meaning "anyone who performs this".
 
 **Nothing is precomputed.** No slot table, no nightly job, no cache. Availability
@@ -550,7 +577,7 @@ enforced rather than agreed.
 |---|---|
 | `normalize_phone(phone, dial_code)` | One spelling of a phone number. Strips punctuation, keeps a `+` prefix, turns a leading `00` into `+`, and adds the salon's country code to a local number. |
 | `find_or_create_customer(org, phone, name, email)` | Match a customer by phone or make one. |
-| `create_appointment(...)` | Every rule, then the insert. |
+| `create_appointment(org, service_ids[], …)` | Every rule, then one row per service, back to back. Returns the **visit id**. |
 
 **Why these are in the database and not in `/lib`.** A customer booking online
 is not logged in — they arrive as `anon`, which has no grant on `customers` or

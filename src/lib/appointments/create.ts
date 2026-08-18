@@ -29,7 +29,14 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export type CreateAppointmentInput = {
   /** Which salon. Public pages get this from `getOrganization()`. */
   organizationId: string;
-  serviceId: string;
+
+  /**
+   * The services, in the order they will be performed. One is the common
+   * case; several is "blow dry and trim for her", done back to back by the
+   * same stylist with no gap between them.
+   */
+  serviceIds: string[];
+
   employeeId: string;
 
   /** When the customer sits down. The end time is computed from the service. */
@@ -57,7 +64,7 @@ export type CreateAppointmentFailure =
   | "unknown";
 
 export type CreateAppointmentResult =
-  | { ok: true; appointmentId: string }
+  | { ok: true; visitId: string }
   | { ok: false; reason: CreateAppointmentFailure; message: string };
 
 /**
@@ -79,7 +86,11 @@ function toIso(value: Date | string): string {
 }
 
 /**
- * Create an appointment, or explain why not.
+ * Create a visit — one appointment row per service — or explain why not.
+ *
+ * Returns the VISIT id rather than an appointment id. That is the customer's
+ * booking reference, and it is the same shape whether they booked one service
+ * or three.
  *
  * Never throws for an ordinary refusal — a taken slot and a past date are
  * expected outcomes of a booking form, not exceptional ones, and a form needs
@@ -95,7 +106,7 @@ export async function createAppointment(
 
   const { data, error } = await supabase.rpc("create_appointment", {
     p_org_id: input.organizationId,
-    p_service_id: input.serviceId,
+    p_service_ids: input.serviceIds,
     p_employee_id: input.employeeId,
     p_starts_at: toIso(input.startsAt),
     p_customer_name: input.customerName,
@@ -134,5 +145,5 @@ export async function createAppointment(
     };
   }
 
-  return { ok: true, appointmentId: data };
+  return { ok: true, visitId: data };
 }

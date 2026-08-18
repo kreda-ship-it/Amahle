@@ -32,6 +32,7 @@ export type Database = {
           starts_at: string
           status: string
           updated_at: string
+          visit_id: string
         }
         Insert: {
           blocked_until: string
@@ -50,6 +51,7 @@ export type Database = {
           starts_at: string
           status?: string
           updated_at?: string
+          visit_id?: string
         }
         Update: {
           blocked_until?: string
@@ -68,6 +70,7 @@ export type Database = {
           starts_at?: string
           status?: string
           updated_at?: string
+          visit_id?: string
         }
         Relationships: [
           {
@@ -914,7 +917,7 @@ export type Database = {
           p_employee_id: string
           p_notes?: string
           p_org_id: string
-          p_service_id: string
+          p_service_ids: string[]
           p_starts_at: string
         }
         Returns: string
@@ -959,7 +962,7 @@ export type Database = {
           p_employee_id?: string
           p_from_date: string
           p_org_id: string
-          p_service_id: string
+          p_service_ids: string[]
           p_to_date?: string
         }
         Returns: {
@@ -968,7 +971,7 @@ export type Database = {
         }[]
       }
       get_booking_confirmation: {
-        Args: { p_appointment_id: string }
+        Args: { p_visit_id: string }
         Returns: {
           employee_name: string
           ends_at: string
