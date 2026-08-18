@@ -905,6 +905,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_appointment: {
+        Args: {
+          p_customer_email?: string
+          p_customer_name: string
+          p_customer_phone: string
+          p_employee_id: string
+          p_notes?: string
+          p_org_id: string
+          p_service_id: string
+          p_starts_at: string
+        }
+        Returns: string
+      }
       create_organization: {
         Args: {
           p_address?: string
@@ -931,7 +944,20 @@ export type Database = {
       current_employee_id: { Args: never; Returns: string }
       current_org_id: { Args: never; Returns: string }
       current_profile_id: { Args: never; Returns: string }
+      find_or_create_customer: {
+        Args: {
+          p_email?: string
+          p_full_name: string
+          p_org_id: string
+          p_phone: string
+        }
+        Returns: string
+      }
       has_permission: { Args: { p_key: string }; Returns: boolean }
+      normalize_phone: {
+        Args: { p_dial_code?: string; p_phone: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
