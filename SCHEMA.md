@@ -254,7 +254,7 @@ What the salon offers. The first table anonymous visitors read.
 | `price` | numeric(10,2) | |
 | `price_display` | text | `exact` → "$120", `from` → "from $120", `hidden` → no price shown. A flat number is a marketing decision, not a fact — braiding and colour are priced by length. |
 | `duration_minutes` | int | How long it takes |
-| `buffer_minutes` | int | Cleanup/prep time after. **Internal** — never visible to anon. |
+| `buffer_minutes` | int, nullable | Cleanup/prep time after this service. **Null means inherit** the organization's `default_buffer_minutes`; `0` means this service deliberately needs none. **Internal** — never visible to anon. |
 | `is_bookable_online` | boolean | False means the service still appears on the public price list, with a "call us" note instead of a Book button. It does **not** hide the service. |
 | `image_path` | text | |
 | `display_order` | int | |
@@ -428,6 +428,69 @@ The core table. Written only through `createAppointment()`.
 
 `source` matters: it tells us how much of the salon's booking has actually moved
 online, which is the real measure of whether this project worked.
+
+## How the gap between appointments is decided
+
+Migration 017. `buffer_minutes` is the cleanup time after a service, and it is
+the gap a customer never sees but a stylist lives by.
+
+| Value | Meaning |
+|---|---|
+| `15` | This service takes 15 minutes to clean up after |
+| `0` | This service deliberately needs no gap |
+| `null` | Use the salon's house rule |
+
+The house rule is `default_buffer_minutes` in the organization's
+`public_settings`, falling back to none if unset.
+
+**Why null was worth adding.** The column used to be `not null default 0`, which
+made "this service genuinely needs no cleanup" and "nobody has thought about
+this service yet" identical to the database. A service added next year by
+someone who did not know the column existed would book customers back to back,
+and nobody would find out until a stylist was twenty minutes late by lunchtime.
+
+`buffer_minutes_for(service_id)` resolves it, and is the **only** place that rule
+lives. Both the appointment trigger and `get_available_slots()` call it, and they
+must never disagree: if availability offered a slot computed with one gap while
+the exclusion constraint reserved a span computed with another, the form would
+offer times the database then refuses — a bug that appears only under load and
+only for real customers.
+
+## Which times a customer may choose
+
+`get_available_slots(org, service, from_date, to_date, employee)`, migration 016.
+Returns `(slot_starts_at, slot_employee_id)`. The employee is in the result
+because `employee` may be null, meaning "anyone who performs this".
+
+**Nothing is precomputed.** No slot table, no nightly job, no cache. Availability
+is derived from the rota, time off and existing appointments at the moment
+someone asks, so a rota edited at 2pm shows up in the 2:01pm booking form.
+Materialising slots would mean every rota edit, cancellation and booking has to
+remember to update them, and the day one forgets is the day the salon
+double-books someone and stops trusting the software.
+
+**Slots step by duration + buffer**, back to back, from the start of each working
+window.
+
+**The service must finish by closing time; the buffer may overhang it.** A
+one-hour cut at 4pm is offered on a day that shuts at 5, even though cleanup runs
+to 5:15. Requiring the buffer to fit inside the working day would silently delete
+the last appointment of every day.
+
+**Timezone is the whole risk.** Working hours are stored as `time` — a fact about
+the salon's clock, not a moment. `(day + start_time) AT TIME ZONE tz` is what
+turns one into the other, and it stays correct across a daylight saving change in
+a way that adding a fixed offset never is. This is why migration 013 stored the
+rota as `time`.
+
+**Customers only.** Staff never call this. A receptionist squeezing someone in at
+6:15 on a day that closes at 6 is real and must keep working — the salon owns its
+own calendar and may overrule its own opening hours. Staff are stopped from
+double-booking by the exclusion constraint, and by nothing else. That is the
+difference between a customer and the person who runs the diary.
+
+Two optional settings in `public_settings`: `booking_lead_time_hours` (default 2,
+so nobody books ten minutes from now) and `booking_horizon_days` (default 60).
 
 ## How an appointment gets created
 

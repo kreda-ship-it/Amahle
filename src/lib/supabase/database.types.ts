@@ -837,7 +837,7 @@ export type Database = {
       }
       services: {
         Row: {
-          buffer_minutes: number
+          buffer_minutes: number | null
           category: string | null
           created_at: string
           deleted_at: string | null
@@ -855,7 +855,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          buffer_minutes?: number
+          buffer_minutes?: number | null
           category?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -873,7 +873,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          buffer_minutes?: number
+          buffer_minutes?: number | null
           category?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -905,6 +905,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      buffer_minutes_for: { Args: { p_service_id: string }; Returns: number }
       create_appointment: {
         Args: {
           p_customer_email?: string
@@ -952,6 +953,19 @@ export type Database = {
           p_phone: string
         }
         Returns: string
+      }
+      get_available_slots: {
+        Args: {
+          p_employee_id?: string
+          p_from_date: string
+          p_org_id: string
+          p_service_id: string
+          p_to_date?: string
+        }
+        Returns: {
+          slot_employee_id: string
+          slot_starts_at: string
+        }[]
       }
       has_permission: { Args: { p_key: string }; Returns: boolean }
       normalize_phone: {
