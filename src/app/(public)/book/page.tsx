@@ -8,7 +8,7 @@ import {
   getEmployeesForServices,
   type BookableService,
 } from "@/lib/appointments/availability";
-import { getHold } from "@/lib/appointments/holds";
+import { getHolds, type Hold } from "@/lib/appointments/holds";
 import { readBookingSession } from "@/lib/appointments/session";
 import {
   salonDateKey,
@@ -21,24 +21,26 @@ import { getOrganization } from "@/lib/site/organization";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
 
 import { chooseTime } from "./actions";
-import { BookingForm } from "./booking-form";
+import { BookingForm, type PersonSummary } from "./booking-form";
 
 /**
- * The booking page — what, with whom, and when.
+ * The booking page.
  *
- * Every choice lives in the URL rather than in the browser's memory:
+ * Two kinds of state, kept deliberately apart:
  *
- *   1. The back button works. Someone half-way through booking is exactly the
- *      person who hits back, and a page holding state in React would lose it.
- *   2. Times are fetched fresh on every step. A slot list sitting in a browser
- *      goes stale while someone deliberates.
- *   3. Nothing is calculated here. `anon` has no privilege on the rota or on
- *      appointments, so this page could not work out availability even if we
- *      wanted it to.
+ *   The URL holds the CHOICES — how many people, which services each of them
+ *   wants, whether they asked for a particular stylist. The back button works,
+ *   nothing goes stale in a browser, and a page load never writes anything.
  *
- * Services are a LIST — `?services=a,b` — because a visit can be a blow dry
- * and a trim. One service is simply a list of one, so there is no second code
- * path for the common case.
+ *   The database holds the HOLDS — the times themselves. A chosen time is a
+ *   reservation, and a reservation belongs where it can be enforced rather
+ *   than in a URL somebody could edit.
+ *
+ * A party is booked one person at a time, which is the salon's own
+ * description: "like two different people booking". Each person's slot is held
+ * while the next one chooses, so the mother's 10:45 with Hanna survives — and
+ * blocks Hanna for the daughter, who is offered somebody else at the same
+ * time.
  */
 
 export const metadata: Metadata = {
@@ -55,16 +57,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const DAYS_SHOWN = 14;
+const MAX_PARTY = 4;
 
-type SearchParams = {
-  services?: string;
-  employee?: string;
-  date?: string;
-  at?: string;
-  add?: string;
-  /** A message from the hold attempt — "someone else is booking that time". */
-  problem?: string;
-};
+type SearchParams = Record<string, string | undefined>;
 
 export default async function BookPage({
   searchParams,
@@ -74,20 +69,24 @@ export default async function BookPage({
   const org = await getOrganization();
   const params = await searchParams;
 
-  const requested = (params.services ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
+  const party = clampParty(params.party);
+
+  if (!party) return <ChooseParty />;
+
+  const person = Math.min(Math.max(Number(params.p ?? "0") || 0, 0), party - 1);
+  const requested = splitIds(params[`s${person}`]);
 
   const chosenServices = await getBookableServices_byIds(org.id, requested);
 
-  // No services yet, or they asked to add another.
   if (chosenServices.length === 0 || params.add) {
     return (
       <ChooseService
         orgId={org.id}
         currency={org.currency}
         already={chosenServices}
+        party={party}
+        person={person}
+        params={params}
       />
     );
   }
@@ -97,16 +96,18 @@ export default async function BookPage({
   const days = salonDaysFrom(org.timezone, DAYS_SHOWN);
   const sessionToken = await readBookingSession();
 
-  // One call for the whole fortnight. The day chooser has to know which days
-  // have anything before you pick one, and fourteen separate questions would
-  // give fourteen slightly different moments of truth.
+  const holds = sessionToken ? await getHolds(sessionToken) : [];
+  const heldBy = new Map(holds.map((hold) => [hold.partyIndex, hold]));
+  const mine = heldBy.get(person) ?? null;
+
   const slots = await getAvailableSlots({
     orgId: org.id,
     serviceIds,
     fromDate: days[0],
     toDate: days[days.length - 1],
-    employeeId: params.employee ?? null,
+    employeeId: params[`e${person}`] ?? null,
     sessionToken,
+    partyIndex: person,
   });
 
   const byDay = new Map<string, typeof slots>();
@@ -114,51 +115,63 @@ export default async function BookPage({
   for (const slot of slots) {
     const key = salonDateKey(slot.startsAt, org.timezone);
     const existing = byDay.get(key);
-
     if (existing) existing.push(slot);
     else byDay.set(key, [slot]);
   }
 
+  // The rest of the party's chosen moments. Person two is shown times that
+  // match one of these first, so a family can be seen together.
+  const partyTimes = new Set(
+    holds.filter((hold) => hold.partyIndex !== person).map((h) => h.startsAt),
+  );
+
   const selectedDay =
     params.date && byDay.has(params.date)
       ? params.date
-      : (days.find((day) => byDay.has(day)) ?? null);
+      : (mine
+          ? salonDateKey(mine.startsAt, org.timezone)
+          : (days.find((day) => byDay.has(day)) ?? null));
 
-  const times = selectedDay ? (byDay.get(selectedDay) ?? []) : [];
+  const times = [...(selectedDay ? (byDay.get(selectedDay) ?? []) : [])].sort(
+    (a, b) => {
+      const aMatch = partyTimes.has(a.startsAt) ? 0 : 1;
+      const bMatch = partyTimes.has(b.startsAt) ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      return a.startsAt.localeCompare(b.startsAt);
+    },
+  );
+
   const nameFor = (id: string) =>
     employees.find((employee) => employee.id === id)?.full_name ?? "our team";
 
-  /*
-   * The hold is the source of truth for what has been chosen, not the URL.
-   * A customer who left the tab open over lunch has an `at` parameter and no
-   * hold, and must be told so rather than shown a form that will fail.
-   */
-  const hold =
-    params.at && sessionToken ? await getHold(sessionToken) : null;
+  const everyoneHeld = Array.from({ length: party }, (_, i) => i).every((i) =>
+    heldBy.has(i),
+  );
 
-  const chosen = hold && hold.startsAt === params.at ? hold : null;
-  const holdLapsed = Boolean(params.at) && chosen === null;
+  const href = (next: SearchParams) => {
+    const query = new URLSearchParams();
+    const merged = { ...params, ...next };
+
+    for (const [key, value] of Object.entries(merged)) {
+      if (value && key !== "problem" && key !== "add") query.set(key, value);
+    }
+
+    if (next.add) query.set("add", next.add);
+
+    return `/book?${query.toString()}`;
+  };
+
+  /** Every current parameter, as hidden fields the action puts straight back. */
+  const carry = Object.entries(params)
+    .filter(([key, value]) => value && key !== "problem" && key !== "add")
+    .map(([key, value]) => ({ name: `q:${key}`, value: value as string }));
 
   const totalMinutes = chosenServices.reduce(
     (sum, service) => sum + service.duration_minutes,
     0,
   );
 
-  const href = (next: Partial<SearchParams>) => {
-    const query = new URLSearchParams();
-    const merged = { ...params, ...next };
-
-    for (const key of ["services", "employee", "date", "at", "add"] as const) {
-      const value = merged[key];
-      if (value) query.set(key, value);
-    }
-
-    return `/book?${query.toString()}`;
-  };
-
-  /** The same list with one entry removed, by position — duplicates are legal. */
-  const withoutIndex = (index: number) =>
-    serviceIds.filter((_, i) => i !== index).join(",");
+  const who = party === 1 ? "" : person === 0 ? " — you" : ` — person ${person + 1}`;
 
   return (
     <Shell>
@@ -166,19 +179,26 @@ export default async function BookPage({
         Book an appointment
       </h1>
 
-      {(params.problem || holdLapsed) && (
+      {party > 1 && (
+        <p className="mt-3 text-ink-muted">
+          Booking for {party} people, one at a time. Person {person + 1} of{" "}
+          {party}.
+        </p>
+      )}
+
+      {params.problem && (
         <p
           role="alert"
           className="mt-6 rounded-xl border border-brand/40 bg-brand/5 px-5 py-4 text-pretty"
         >
-          {params.problem ??
-            "Your time was held for a few minutes and has now been released. Please choose again."}
+          {params.problem}
         </p>
       )}
 
-      {/* What they are having. */}
       <section className="mt-8 rounded-2xl bg-surface-sunk px-6 py-5">
-        <h2 className="font-display text-lg font-semibold">Your visit</h2>
+        <h2 className="font-display text-lg font-semibold">
+          This visit{who}
+        </h2>
 
         <ul className="mt-3 divide-y divide-line">
           {chosenServices.map((service, index) => (
@@ -198,17 +218,13 @@ export default async function BookPage({
                   ) ?? "Call for a price"}
                 </span>
 
-                {/* Removing the only service returns you to the chooser. */}
                 <Link
-                  href={
-                    chosenServices.length === 1
-                      ? "/book"
-                      : href({
-                          services: withoutIndex(index),
-                          at: undefined,
-                          employee: undefined,
-                        })
-                  }
+                  href={href({
+                    [`s${person}`]:
+                      serviceIds.filter((_, i) => i !== index).join(",") ||
+                      undefined,
+                    [`e${person}`]: undefined,
+                  })}
                   className="text-brand hover:underline"
                 >
                   Remove
@@ -232,11 +248,6 @@ export default async function BookPage({
         </div>
       </section>
 
-      {/*
-        Only the stylists who can do EVERY service, which is why adding a
-        second service can shorten this list. A visit is one person from start
-        to finish.
-      */}
       {employees.length > 1 && (
         <section className="mt-10">
           <h2 className="font-display text-xl font-semibold">
@@ -245,8 +256,8 @@ export default async function BookPage({
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Chip
-              href={href({ employee: undefined, at: undefined })}
-              active={!params.employee}
+              href={href({ [`e${person}`]: undefined })}
+              active={!params[`e${person}`]}
             >
               Anyone
             </Chip>
@@ -254,8 +265,8 @@ export default async function BookPage({
             {employees.map((employee) => (
               <Chip
                 key={employee.id}
-                href={href({ employee: employee.id, at: undefined })}
-                active={params.employee === employee.id}
+                href={href({ [`e${person}`]: employee.id })}
+                active={params[`e${person}`] === employee.id}
               >
                 {employee.full_name}
               </Chip>
@@ -271,20 +282,17 @@ export default async function BookPage({
         </p>
       )}
 
-      {/* When. */}
       {employees.length > 0 && (
         <>
           <section className="mt-10">
             <h2 className="font-display text-xl font-semibold">Pick a day</h2>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              {days.map((day) => {
-                const available = byDay.has(day);
-
-                return available ? (
+              {days.map((day) =>
+                byDay.has(day) ? (
                   <Chip
                     key={day}
-                    href={href({ date: day, at: undefined })}
+                    href={href({ date: day })}
                     active={day === selectedDay}
                   >
                     {salonDayLabel(day)}
@@ -297,8 +305,8 @@ export default async function BookPage({
                   >
                     {salonDayLabel(day)}
                   </span>
-                );
-              })}
+                ),
+              )}
             </div>
           </section>
 
@@ -317,61 +325,80 @@ export default async function BookPage({
                 {/*
                   A form, not a link. Choosing a time RESERVES it, and a write
                   must not happen because a page was loaded — a crawler or a
-                  browser prefetch would quietly start holding the salon's
-                  afternoon.
+                  browser prefetch would start holding the salon's afternoon.
                 */}
-                {times.map((slot) => (
-                  <form
-                    key={`${slot.startsAt}-${slot.employeeId}`}
-                    action={chooseTime}
-                  >
-                    <input
-                      type="hidden"
-                      name="serviceIds"
-                      value={serviceIds.join(",")}
-                    />
-                    <input
-                      type="hidden"
-                      name="employeeId"
-                      value={slot.employeeId}
-                    />
-                    <input type="hidden" name="startsAt" value={slot.startsAt} />
-                    <input
-                      type="hidden"
-                      name="employee"
-                      value={params.employee ?? ""}
-                    />
-                    <input type="hidden" name="date" value={selectedDay ?? ""} />
+                {times.map((slot) => {
+                  const chosen = mine?.startsAt === slot.startsAt;
+                  const together = partyTimes.has(slot.startsAt);
 
-                    <button
-                      type="submit"
-                      className={
-                        params.at === slot.startsAt
-                          ? "rounded-full border border-brand bg-brand px-4 py-2 text-sm text-white"
-                          : "rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
-                      }
+                  return (
+                    <form
+                      key={`${slot.startsAt}-${slot.employeeId}`}
+                      action={chooseTime}
                     >
-                      <span className="font-medium">
-                        {salonTime(slot.startsAt, org.timezone)}
-                      </span>
+                      {carry.map((field) => (
+                        <input
+                          key={field.name}
+                          type="hidden"
+                          name={field.name}
+                          value={field.value}
+                        />
+                      ))}
+                      <input
+                        type="hidden"
+                        name="serviceIds"
+                        value={serviceIds.join(",")}
+                      />
+                      <input
+                        type="hidden"
+                        name="employeeId"
+                        value={slot.employeeId}
+                      />
+                      <input
+                        type="hidden"
+                        name="startsAt"
+                        value={slot.startsAt}
+                      />
+                      <input
+                        type="hidden"
+                        name="partyIndex"
+                        value={String(person)}
+                      />
+                      <input
+                        type="hidden"
+                        name="date"
+                        value={selectedDay ?? ""}
+                      />
 
-                      {!params.employee && (
-                        <span className="ml-2 text-ink-muted">
-                          {nameFor(slot.employeeId)}
+                      <button
+                        type="submit"
+                        className={
+                          chosen
+                            ? "rounded-full border border-brand bg-brand px-4 py-2 text-sm text-white"
+                            : "rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
+                        }
+                      >
+                        <span className="font-medium">
+                          {salonTime(slot.startsAt, org.timezone)}
                         </span>
-                      )}
-                    </button>
-                  </form>
-                ))}
+
+                        {!params[`e${person}`] && (
+                          <span className="ml-2 text-ink-muted">
+                            {nameFor(slot.employeeId)}
+                          </span>
+                        )}
+
+                        {/* The whole point of booking a family together. */}
+                        {together && !chosen && (
+                          <span className="ml-2 text-brand">same time</span>
+                        )}
+                      </button>
+                    </form>
+                  );
+                })}
               </div>
             )}
 
-            {/*
-              Not a fallback. Staff booking deliberately ignores these times,
-              because the receptionist may overrule the opening hours and
-              squeeze someone in. Without this line a customer sees five
-              options, assumes the day is full, and books elsewhere.
-            */}
             {org.phone && (
               <p className="mt-6 text-sm text-ink-muted text-pretty">
                 Don&rsquo;t see a time that works?{" "}
@@ -388,62 +415,172 @@ export default async function BookPage({
         </>
       )}
 
-      {chosen && (
+      {/* Held, and there is somebody else still to choose. */}
+      {mine && !everyoneHeld && (
         <section className="mt-10 rounded-2xl border border-line px-6 py-5">
-          <h2 className="font-display text-xl font-semibold">Your details</h2>
-
-          {/*
-            Said plainly rather than counted down. A ticking clock on a form
-            makes people rush and mistype; a time they can read tells them the
-            same thing without the pressure.
-          */}
-          <p className="mt-2 text-sm text-ink-muted">
-            This time is held for you until{" "}
-            {salonTime(chosen.expiresAt, org.timezone)}.
+          <p className="text-pretty">
+            Held until {salonTime(mine.expiresAt, org.timezone)}. Now choose for
+            the next person.
           </p>
 
-          <BookingForm
-            serviceIds={serviceIds.join(",")}
-            employeeId={chosen.employeeId}
-            startsAt={chosen.startsAt}
-            summary={`${chosenServices
-              .map((service) => service.name)
-              .join(" and ")} with ${nameFor(
-              chosen.employeeId,
-            )} on ${salonDayLabelLong(
-              salonDateKey(chosen.startsAt, org.timezone),
-            )} at ${salonTime(chosen.startsAt, org.timezone)}.`}
-          />
+          <Link
+            href={href({ p: String(nextUnheld(party, heldBy)), date: undefined })}
+            className="mt-4 inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
+          >
+            Next person
+          </Link>
         </section>
+      )}
+
+      {everyoneHeld && (
+        <PartyDetails
+          org={org}
+          party={party}
+          params={params}
+          holds={holds}
+          heldBy={heldBy}
+        />
       )}
     </Shell>
   );
 }
 
-/** Choosing a service — the first step, and the "add another" step. */
+/** The contact form, once every person in the party has a time. */
+async function PartyDetails({
+  org,
+  party,
+  params,
+  holds,
+  heldBy,
+}: {
+  org: Awaited<ReturnType<typeof getOrganization>>;
+  party: number;
+  params: SearchParams;
+  holds: Hold[];
+  heldBy: Map<number, Hold>;
+}) {
+  const people: PersonSummary[] = [];
+
+  for (let index = 0; index < party; index++) {
+    const hold = heldBy.get(index)!;
+    const services = await getBookableServices_byIds(
+      org.id,
+      splitIds(params[`s${index}`]),
+    );
+
+    const employees = await getEmployeesForServices(
+      org.id,
+      services.map((service) => service.id),
+    );
+
+    const stylist =
+      employees.find((employee) => employee.id === hold.employeeId)
+        ?.full_name ?? "our team";
+
+    people.push({
+      serviceIds: services.map((service) => service.id).join(","),
+      summary: `${services.map((service) => service.name).join(" and ")} with ${stylist} on ${salonDayLabelLong(
+        salonDateKey(hold.startsAt, org.timezone),
+      )} at ${salonTime(hold.startsAt, org.timezone)}.`,
+    });
+  }
+
+  // The earliest lapse governs — once one hold goes the booking is incomplete.
+  const soonest = holds.reduce(
+    (earliest, hold) => (hold.expiresAt < earliest ? hold.expiresAt : earliest),
+    holds[0].expiresAt,
+  );
+
+  return (
+    <section className="mt-10 rounded-2xl border border-line px-6 py-5">
+      <h2 className="font-display text-xl font-semibold">Your details</h2>
+
+      <BookingForm
+        people={people}
+        heldUntil={salonTime(soonest, org.timezone)}
+      />
+    </section>
+  );
+}
+
+function ChooseParty() {
+  return (
+    <Shell>
+      <h1 className="font-display text-3xl font-semibold sm:text-4xl">
+        Book an appointment
+      </h1>
+
+      <p className="mt-4 text-lg text-ink-muted text-pretty">
+        How many people are coming?
+      </p>
+
+      <div className="mt-8 flex flex-wrap gap-3">
+        {Array.from({ length: MAX_PARTY }, (_, index) => index + 1).map(
+          (size) => (
+            <Link
+              key={size}
+              href={`/book?party=${size}`}
+              className="rounded-full border border-line px-6 py-3 font-medium transition-colors hover:border-brand hover:text-brand"
+            >
+              {size === 1 ? "Just me" : `${size} people`}
+            </Link>
+          ),
+        )}
+      </div>
+
+      <p className="mt-10 rounded-2xl bg-surface-sunk px-6 py-5 text-sm text-ink-muted text-pretty">
+        More than four, or something complicated? Give us a ring and we will
+        plan it with you.
+      </p>
+    </Shell>
+  );
+}
+
 async function ChooseService({
   orgId,
   currency,
   already,
+  party,
+  person,
+  params,
 }: {
   orgId: string;
   currency: string;
   already: BookableService[];
+  party: number;
+  person: number;
+  params: SearchParams;
 }) {
   const services = await getBookableServices(orgId);
   const adding = already.length > 0;
   const chosenIds = already.map((service) => service.id);
 
+  const to = (ids: string[]) => {
+    const query = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(params)) {
+      if (value && key !== "add" && key !== "problem") query.set(key, value);
+    }
+
+    query.set("party", String(party));
+    query.set("p", String(person));
+    query.set(`s${person}`, ids.join(","));
+
+    return `/book?${query.toString()}`;
+  };
+
   return (
     <Shell>
       <h1 className="font-display text-3xl font-semibold sm:text-4xl">
-        {adding ? "Add another service" : "Book an appointment"}
+        {adding ? "Add another service" : "What would you like?"}
       </h1>
 
       <p className="mt-4 text-lg text-ink-muted text-pretty">
         {adding
-          ? `Adding to ${already.map((service) => service.name).join(" and ")}. Anything else done at the same visit is with the same stylist, one after the other.`
-          : "Choose a service to see when we are free."}
+          ? "Anything added is done at the same visit, by the same stylist, one after the other."
+          : party > 1
+            ? `Choosing for person ${person + 1} of ${party}.`
+            : "Choose a service to see when we are free."}
       </p>
 
       {services.length === 0 ? (
@@ -462,7 +599,7 @@ async function ChooseService({
             return (
               <li key={service.id}>
                 <Link
-                  href={`/book?services=${[...chosenIds, service.id].join(",")}`}
+                  href={to([...chosenIds, service.id])}
                   className="flex flex-wrap justify-between gap-x-6 gap-y-2 py-5 transition-colors hover:text-brand"
                 >
                   <div className="min-w-56 flex-1">
@@ -493,7 +630,7 @@ async function ChooseService({
 
       {adding && (
         <Link
-          href={`/book?services=${chosenIds.join(",")}`}
+          href={to(chosenIds)}
           className="mt-8 inline-block text-sm font-medium text-brand hover:underline"
         >
           ← Back without adding
@@ -514,6 +651,26 @@ async function ChooseService({
       </p>
     </Shell>
   );
+}
+
+function clampParty(value: string | undefined): number | null {
+  const party = Number(value);
+  if (!Number.isInteger(party) || party < 1 || party > MAX_PARTY) return null;
+  return party;
+}
+
+function splitIds(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+function nextUnheld(party: number, heldBy: Map<number, unknown>): number {
+  for (let index = 0; index < party; index++) {
+    if (!heldBy.has(index)) return index;
+  }
+  return party - 1;
 }
 
 function Shell({ children }: { children: React.ReactNode }) {

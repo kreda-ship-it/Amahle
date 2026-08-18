@@ -15,6 +15,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 
 export type Hold = {
+  /** Which person in the party. 0 is whoever is doing the booking. */
+  partyIndex: number;
   employeeId: string;
   startsAt: string;
   /** ISO instant when the hold lapses. */
@@ -34,6 +36,7 @@ export async function holdSlot(input: {
   employeeId: string;
   startsAt: string;
   sessionToken: string;
+  partyIndex: number;
 }): Promise<HoldResult> {
   const supabase = await createSupabaseServerClient();
 
@@ -43,6 +46,7 @@ export async function holdSlot(input: {
     p_employee_id: input.employeeId,
     p_starts_at: input.startsAt,
     p_session_token: input.sessionToken,
+    p_party_index: input.partyIndex,
   });
 
   if (error) {
@@ -71,26 +75,29 @@ export async function holdSlot(input: {
   return { ok: true, expiresAt: data };
 }
 
-/** The session's live hold, or null if it never had one or it has lapsed. */
-export async function getHold(sessionToken: string): Promise<Hold | null> {
+/**
+ * Every live hold this session has — one per person in the party.
+ *
+ * This is where the party's chosen times actually live. The URL carries who
+ * wants what; the database carries when, because a hold is a reservation and a
+ * reservation belongs where it can be enforced.
+ */
+export async function getHolds(sessionToken: string): Promise<Hold[]> {
   const supabase = await createSupabaseServerClient();
 
-  const { data, error } = await supabase.rpc("get_hold", {
+  const { data, error } = await supabase.rpc("get_holds", {
     p_session_token: sessionToken,
   });
 
   if (error) {
-    console.error("get_hold failed", error);
-    return null;
+    console.error("get_holds failed", error);
+    return [];
   }
 
-  const row = data?.[0];
-
-  if (!row) return null;
-
-  return {
+  return (data ?? []).map((row) => ({
+    partyIndex: row.party_index,
     employeeId: row.employee_id,
     startsAt: row.starts_at,
     expiresAt: row.expires_at,
-  };
+  }));
 }

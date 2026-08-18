@@ -22,6 +22,7 @@ export type Database = {
           expires_at: string
           id: string
           org_id: string
+          party_index: number
           released_at: string | null
           session_token: string
           starts_at: string
@@ -33,6 +34,7 @@ export type Database = {
           expires_at: string
           id?: string
           org_id: string
+          party_index?: number
           released_at?: string | null
           session_token: string
           starts_at: string
@@ -44,6 +46,7 @@ export type Database = {
           expires_at?: string
           id?: string
           org_id?: string
+          party_index?: number
           released_at?: string | null
           session_token?: string
           starts_at?: string
@@ -74,6 +77,7 @@ export type Database = {
           deleted_at: string | null
           employee_id: string
           ends_at: string
+          for_name: string | null
           id: string
           notes: string | null
           org_id: string
@@ -93,6 +97,7 @@ export type Database = {
           deleted_at?: string | null
           employee_id: string
           ends_at: string
+          for_name?: string | null
           id?: string
           notes?: string | null
           org_id: string
@@ -112,6 +117,7 @@ export type Database = {
           deleted_at?: string | null
           employee_id?: string
           ends_at?: string
+          for_name?: string | null
           id?: string
           notes?: string | null
           org_id?: string
@@ -966,11 +972,14 @@ export type Database = {
           p_customer_name: string
           p_customer_phone: string
           p_employee_id: string
+          p_for_name?: string
           p_notes?: string
           p_org_id: string
+          p_party_index?: number
           p_service_ids: string[]
           p_session_token?: string
           p_starts_at: string
+          p_visit_id?: string
         }
         Returns: string
       }
@@ -1014,6 +1023,7 @@ export type Database = {
           p_employee_id?: string
           p_from_date: string
           p_org_id: string
+          p_party_index?: number
           p_service_ids: string[]
           p_session_token?: string
           p_to_date?: string
@@ -1028,17 +1038,20 @@ export type Database = {
         Returns: {
           employee_name: string
           ends_at: string
+          for_name: string
           price: number
           service_name: string
           starts_at: string
           status: string
         }[]
       }
-      get_hold: {
+      get_holds: {
         Args: { p_session_token: string }
         Returns: {
+          blocked_until: string
           employee_id: string
           expires_at: string
+          party_index: number
           starts_at: string
         }[]
       }
@@ -1047,6 +1060,7 @@ export type Database = {
         Args: {
           p_employee_id: string
           p_org_id: string
+          p_party_index?: number
           p_service_ids: string[]
           p_session_token: string
           p_starts_at: string
@@ -1057,7 +1071,10 @@ export type Database = {
         Args: { p_dial_code?: string; p_phone: string }
         Returns: string
       }
-      release_holds: { Args: { p_session_token?: string }; Returns: undefined }
+      release_holds: {
+        Args: { p_party_index?: number; p_session_token?: string }
+        Returns: undefined
+      }
       round_up_to_minutes: {
         Args: { p_minutes: number; p_ts: string }
         Returns: string

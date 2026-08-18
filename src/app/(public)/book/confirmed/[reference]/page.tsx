@@ -110,11 +110,22 @@ export default async function ConfirmedPage({
         {booking.services.map((service, index) => (
           <Row
             key={`${service.serviceName}-${index}`}
-            label={booking.services.length > 1 ? `Service ${index + 1}` : "Service"}
-            value={service.serviceName}
+            label={
+              // Whose appointment it is matters more than its position, once
+              // there is more than one person in the party.
+              service.forName ??
+              (booking.services.length > 1 ? `Service ${index + 1}` : "Service")
+            }
+            value={
+              service.forName
+                ? `${service.serviceName} with ${service.employeeName}`
+                : service.serviceName
+            }
           />
         ))}
-        <Row label="With" value={booking.employeeName} />
+        {!booking.services.some((service) => service.forName) && (
+          <Row label="With" value={booking.employeeName} />
+        )}
         <Row label="When" value={`${day}, ${from} – ${to}`} />
         <Row
           label={booking.services.length > 1 ? "Total" : "Price"}

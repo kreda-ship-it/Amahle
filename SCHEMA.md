@@ -412,6 +412,7 @@ The core table. Written only through `createAppointment()`.
 
 | Column | Type | Meaning |
 |---|---|---|
+| `for_name` | text, nullable | Who this appointment is for, when it is not the customer themselves — a child, a friend. Null is the normal case. |
 | `visit_id` | uuid | Which rows are one trip to the salon. **Always set**, even for a single service. This is the customer's booking reference. |
 | `customer_id` | uuid | |
 | `employee_id` | uuid | |
@@ -447,6 +448,17 @@ Phase 5.
 there is no "part of a group" flag and no special case — the same code path
 serves a trim and a trim-with-blow-dry, and there is no second path to get
 wrong.
+
+**A party is one customer record.** `customers.phone` is the identity and is
+unique per salon, so two people cannot share a number — and a child booking with
+her mother has none of her own. So the person who can be contacted is the
+customer, and each appointment carries `for_name`.
+
+The cost, recorded because it will surface later: the daughter's service history
+attaches to her mother's record. When customer screens arrive in Phase 6,
+"Amira's hair formula" sits under her mother's name until someone splits them.
+That is a merge, and a far easier job than un-picking a nullable identity column
+would have been. Decided 2026-08-19.
 
 **Chained services carry no buffer between them.** `buffer_minutes` resets the
 station between *customers*, and the same head does not need cleaning up
@@ -578,6 +590,7 @@ A slot reserved for a few minutes while somebody finishes booking it. Migration
 | `starts_at` | timestamptz | |
 | `blocked_until` | timestamptz | Includes the buffer, same span an appointment would reserve |
 | `session_token` | text | Which browser this belongs to. Random, in a cookie. |
+| `party_index` | int | Which person in the party. 0 is whoever is booking, and the only value for an ordinary booking. |
 | `expires_at` | timestamptz | Fifteen minutes by default; `hold_minutes` in `public_settings` |
 | `released_at` | timestamptz | Set when the hold ends — used up, replaced, or lapsed |
 
@@ -603,9 +616,13 @@ explicitly at the start of `hold_slot()` instead.
 `hold_slot()`, `release_holds()` and `get_hold()`. That is what stops a browser
 holding every slot in the salon.
 
-**A hold blocks everyone except the session that made it.** Otherwise a customer
-who just picked 10:45 would reload the page and find 10:45 gone — the hold would
-hide the very slot it is protecting. Both `get_available_slots()` and
+**A hold blocks everyone except the session that made it, for that same
+person.** Otherwise a customer who just picked 10:45 would reload the page and
+find 10:45 gone — the hold would hide the very slot it is protecting.
+
+The "same person" half matters as much: if the mother is holding Hanna at 10:45,
+the daughter must be offered somebody else at 10:45, not Hanna. Her own party's
+hold is a real obstacle to her, and the simpler rule would have hidden it. Both `get_available_slots()` and
 `create_appointment()` take the session token and use `is distinct from`, which
 also gets the null case right: a caller with no token is distinct from every
 token, so every live hold counts as busy for them.

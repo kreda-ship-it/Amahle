@@ -171,6 +171,13 @@ export async function getAvailableSlots(input: {
   employeeId?: string | null;
   /** So the customer keeps seeing the slot they are holding. */
   sessionToken?: string | null;
+
+  /**
+   * Which person in the party these times are for. Their own hold does not
+   * block them; the rest of their party's does — if the mother has Hanna at
+   * 10:45, the daughter needs somebody else.
+   */
+  partyIndex?: number | null;
 }): Promise<Slot[]> {
   if (input.serviceIds.length === 0) return [];
 
@@ -183,6 +190,7 @@ export async function getAvailableSlots(input: {
     p_to_date: input.toDate ?? undefined,
     p_employee_id: input.employeeId ?? undefined,
     p_session_token: input.sessionToken ?? undefined,
+    p_party_index: input.partyIndex ?? undefined,
   });
 
   if (error) {

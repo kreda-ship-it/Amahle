@@ -7,7 +7,7 @@ import {
   getEmployeesForServices,
 } from "@/lib/appointments/availability";
 import { createAppointment } from "@/lib/appointments/create";
-import { holdSlot } from "@/lib/appointments/holds";
+import { getHolds, holdSlot } from "@/lib/appointments/holds";
 import {
   ensureBookingSession,
   readBookingSession,
@@ -63,13 +63,20 @@ export async function chooseTime(formData: FormData): Promise<void> {
   const serviceIds = text(formData, "serviceIds");
   const employeeId = text(formData, "employeeId");
   const startsAt = text(formData, "startsAt");
-  const employee = text(formData, "employee");
   const date = text(formData, "date");
 
+  // Everything the picker needs to rebuild itself, carried through the
+  // redirect untouched. The action knows nothing about the shape of the
+  // party; it just puts back what it was handed.
   const query = new URLSearchParams();
-  if (serviceIds) query.set("services", serviceIds);
-  if (employee) query.set("employee", employee);
-  if (date) query.set("date", date);
+
+  for (const [key, value] of formData.entries()) {
+    if (key.startsWith("q:") && typeof value === "string" && value) {
+      query.set(key.slice(2), value);
+    }
+  }
+
+  const partyIndex = Number(text(formData, "partyIndex") || "0");
 
   if (!serviceIds || !employeeId || !startsAt) {
     redirect(`/book?${query.toString()}`);
@@ -83,6 +90,7 @@ export async function chooseTime(formData: FormData): Promise<void> {
     employeeId,
     startsAt,
     sessionToken,
+    partyIndex,
   });
 
   if (!held.ok) {
@@ -90,7 +98,7 @@ export async function chooseTime(formData: FormData): Promise<void> {
     redirect(`/book?${query.toString()}`);
   }
 
-  query.set("at", startsAt);
+  if (date) query.set("date", date);
   redirect(`/book?${query.toString()}`);
 }
 
@@ -100,32 +108,18 @@ export async function submitBooking(
 ): Promise<BookingState> {
   const org = await getOrganization();
 
-  const serviceIds = text(formData, "serviceIds")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
-  const employeeId = text(formData, "employeeId");
-  const startsAt = text(formData, "startsAt");
+  const party = Math.max(1, Number(text(formData, "party") || "1"));
   const name = text(formData, "customerName");
   const phone = text(formData, "customerPhone");
   const email = text(formData, "customerEmail");
   const notes = text(formData, "notes");
 
-  if (serviceIds.length === 0 || !employeeId || !startsAt) {
-    return {
-      status: "error",
-      message:
-        "Something went wrong with your chosen time. Please pick it again.",
-    };
-  }
-
   if (!name) {
     return { status: "error", message: "Please tell us your name." };
   }
 
-  // Deliberately loose. Phone numbers are written a dozen ways and
-  // normalize_phone() in the database sorts the rest out; this only catches
-  // an empty box or an obvious slip.
+  // Deliberately loose. normalize_phone() in the database sorts out the dozen
+  // ways people write a number; this only catches an empty box.
   if (countDigits(phone) < 7) {
     return {
       status: "error",
@@ -133,39 +127,102 @@ export async function submitBooking(
     };
   }
 
-  const result = await createAppointment({
-    organizationId: org.id,
-    sessionToken: await readBookingSession(),
-    serviceIds,
-    employeeId,
-    startsAt,
-    customerName: name,
-    customerPhone: phone,
-    customerEmail: email || null,
-    notes: notes || null,
-  });
+  const sessionToken = await readBookingSession();
 
-  if (result.ok) {
-    // Outside any try/catch on purpose: redirect() works by throwing, and a
-    // catch here would swallow it and leave the customer staring at the form
-    // after their appointment had been made.
-    redirect(`/book/confirmed/${result.visitId}`);
-  }
-
-  if (result.reason === "slot_taken") {
+  if (!sessionToken) {
     return {
       status: "error",
-      message: result.message,
-      alternatives: await findAlternatives({
-        orgId: org.id,
-        timezone: org.timezone,
-        serviceIds,
-        startsAt,
-      }),
+      message: "Your held times have lapsed. Please choose again.",
     };
   }
 
-  return { status: "error", message: result.message };
+  // The chosen times live in the holds, not in the form. A form field could be
+  // edited; a hold is a reservation the database is enforcing.
+  const holds = await getHolds(sessionToken);
+  const byPerson = new Map(holds.map((hold) => [hold.partyIndex, hold]));
+
+  for (let person = 0; person < party; person++) {
+    if (!byPerson.has(person)) {
+      return {
+        status: "error",
+        message:
+          "One of your held times has lapsed. Please choose it again — the others are still held.",
+      };
+    }
+  }
+
+  /*
+   * Booked one person at a time, sharing a visit id so the party gets one
+   * confirmation. Not atomic across people, and that is a deliberate
+   * acceptance rather than an oversight: each person's slot is held, so a
+   * later failure is unlikely, and a mother whose own appointment succeeded
+   * has genuinely got that appointment. What matters is telling her plainly
+   * which one did not.
+   */
+  let visitId: string | null = null;
+
+  for (let person = 0; person < party; person++) {
+    const hold = byPerson.get(person)!;
+
+    const serviceIds = text(formData, `services${person}`)
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+    if (serviceIds.length === 0) {
+      return {
+        status: "error",
+        message: "Something went wrong with the services chosen. Please start again.",
+      };
+    }
+
+    const result = await createAppointment({
+      organizationId: org.id,
+      sessionToken,
+      partyIndex: person,
+      visitId,
+      serviceIds,
+      employeeId: hold.employeeId,
+      startsAt: hold.startsAt,
+      customerName: name,
+      customerPhone: phone,
+      customerEmail: email || null,
+      notes: person === 0 ? notes || null : null,
+      // Person 0 is whoever is booking, so their appointments need no label.
+      forName: person === 0 ? null : text(formData, `forName${person}`) || null,
+    });
+
+    if (!result.ok) {
+      if (visitId) {
+        return {
+          status: "error",
+          message: `${result.message} The earlier appointments in this booking were made — see them at /book/confirmed/${visitId}.`,
+        };
+      }
+
+      if (result.reason === "slot_taken") {
+        return {
+          status: "error",
+          message: result.message,
+          alternatives: await findAlternatives({
+            orgId: org.id,
+            timezone: org.timezone,
+            serviceIds,
+            startsAt: hold.startsAt,
+          }),
+        };
+      }
+
+      return { status: "error", message: result.message };
+    }
+
+    visitId = result.visitId;
+  }
+
+  // redirect() works by throwing, so it stays outside any try/catch — a catch
+  // would swallow it and leave the customer staring at the form after their
+  // appointments had been made.
+  redirect(`/book/confirmed/${visitId}`);
 }
 
 /**

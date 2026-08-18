@@ -12,6 +12,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export type BookedService = {
   serviceName: string;
   employeeName: string;
+  /** Who it is for, when it is not the person who booked. */
+  forName: string | null;
   startsAt: string;
   endsAt: string;
   price: number;
@@ -64,6 +66,7 @@ export async function getBookingConfirmation(
   const services = rows.map((row) => ({
     serviceName: row.service_name,
     employeeName: row.employee_name,
+    forName: row.for_name,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     price: row.price,

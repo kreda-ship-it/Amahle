@@ -321,7 +321,7 @@ settled, and the map link is correct.
         is offered the same times as one who does not. Nothing is wrong; the day
         is simply less tightly packed than it could be. The receptionist can
         still squeeze a wash in by phone, because staff bypass availability
-- [ ] Public booking form
+- [x] **Public booking form** — stages A to E, plus holds
       - [x] **Stage A — the picker.** Service, stylist or anyone, day, time.
             `/book`, state held in the URL so the back button works and times
             never age in a cache
@@ -355,7 +355,7 @@ settled, and the map link is correct.
             Picking a time is a form rather than a link, because holding is a
             write and a write must not happen because a page was loaded — a
             crawler or a prefetch would start reserving the afternoon
-      - [ ] **Stage E — more than one person.** Specified 2026-08-18. Ask how
+      - [x] **Stage E — more than one person**, 2026-08-19. Specified 2026-08-18. Ask how
             many people up front, then take each person in turn: service,
             stylist, day, time — "like two different people booking". No
             combinatorial search for two simultaneously-free stylists; it is the

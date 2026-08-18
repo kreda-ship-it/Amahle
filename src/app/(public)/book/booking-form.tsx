@@ -6,41 +6,67 @@ import { useActionState } from "react";
 import { submitBooking, type BookingState } from "./actions";
 
 /**
- * Name, phone, and the button that makes it real.
+ * The last step: who to contact, and the button that makes it real.
  *
- * One of the few client components in this project, and only because it needs
- * to show what came back from the submit — an error, or the alternatives when
- * somebody else took the slot first. Everything it knows arrives from the
- * server; it holds no booking logic of its own.
+ * One of the few client components in this project, and only because it has to
+ * show what came back — an error, or the alternatives when somebody took a
+ * slot first. It holds no booking logic; everything it knows arrives from the
+ * server.
  *
- * The chosen slot travels in hidden fields rather than being re-derived here.
- * If it has gone stale, the database says so, and the answer to that is the
- * recovery below rather than a check the browser could get wrong.
+ * Contact details are asked for ONCE, however many people are in the party.
+ * The person booking is the person the salon can reach; the others are names
+ * on appointments, because a child has no phone number of her own and
+ * `customers.phone` is the identity. See migration 024.
  */
 
 const initial: BookingState = { status: "idle" };
 
-export function BookingForm({
-  serviceIds,
-  employeeId,
-  startsAt,
-  summary,
-}: {
-  /** Comma-separated, in the order they will be performed. */
+export type PersonSummary = {
+  /** Comma-separated service ids, in order. */
   serviceIds: string;
-  employeeId: string;
-  startsAt: string;
+  /** "Blow dry and Trim with Hanna, Thursday 20 August at 10:45." */
   summary: string;
+};
+
+export function BookingForm({
+  people,
+  heldUntil,
+}: {
+  people: PersonSummary[];
+  heldUntil: string;
 }) {
   const [state, action, pending] = useActionState(submitBooking, initial);
+  const party = people.length;
 
   return (
     <form action={action} className="mt-6">
-      <input type="hidden" name="serviceIds" value={serviceIds} />
-      <input type="hidden" name="employeeId" value={employeeId} />
-      <input type="hidden" name="startsAt" value={startsAt} />
+      <input type="hidden" name="party" value={party} />
 
-      <p className="text-pretty">{summary}</p>
+      {people.map((person, index) => (
+        <input
+          key={index}
+          type="hidden"
+          name={`services${index}`}
+          value={person.serviceIds}
+        />
+      ))}
+
+      <ol className="space-y-2">
+        {people.map((person, index) => (
+          <li key={index} className="text-pretty">
+            {party > 1 && (
+              <span className="font-medium">
+                {index === 0 ? "You" : `Person ${index + 1}`}:{" "}
+              </span>
+            )}
+            {person.summary}
+          </li>
+        ))}
+      </ol>
+
+      <p className="mt-3 text-sm text-ink-muted">
+        Held for you until {heldUntil}.
+      </p>
 
       <div className="mt-6 space-y-4">
         <Field
@@ -67,11 +93,19 @@ export function BookingForm({
           hint="Optional."
         />
 
+        {/* One name box per extra person, so the salon knows who is in each
+            chair. Optional — "Person 2" is better than a blocked booking. */}
+        {people.slice(1).map((_, index) => (
+          <Field
+            key={index}
+            label={`Name of person ${index + 2}`}
+            name={`forName${index + 1}`}
+            hint="Optional — so we know who to expect."
+          />
+        ))}
+
         <div>
-          <label
-            htmlFor="notes"
-            className="block text-sm font-medium"
-          >
+          <label htmlFor="notes" className="block text-sm font-medium">
             Anything we should know?
           </label>
 
@@ -116,12 +150,6 @@ export function BookingForm({
               </div>
             </>
           )}
-
-          {state.alternatives && state.alternatives.length === 0 && (
-            <p className="mt-2 text-sm text-ink-muted text-pretty">
-              Nothing else is free that day. Try another day, or give us a call.
-            </p>
-          )}
         </div>
       )}
 
@@ -130,7 +158,7 @@ export function BookingForm({
         disabled={pending}
         className="mt-8 w-full rounded-full bg-brand px-6 py-3.5 font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-60 sm:w-auto"
       >
-        {pending ? "Booking…" : "Confirm booking"}
+        {pending ? "Booking…" : party > 1 ? "Book all appointments" : "Confirm booking"}
       </button>
 
       <p className="mt-4 text-sm text-ink-muted text-pretty">

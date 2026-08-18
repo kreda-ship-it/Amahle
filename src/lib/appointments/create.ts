@@ -54,6 +54,15 @@ export type CreateAppointmentInput = {
    * them, and it is released once the appointment exists.
    */
   sessionToken?: string | null;
+
+  /** Which person in the party. 0, and omitted, is an ordinary booking. */
+  partyIndex?: number;
+
+  /** Join an existing visit, so a party shares one booking reference. */
+  visitId?: string | null;
+
+  /** Who this is for, when it is not the person booking. */
+  forName?: string | null;
 };
 
 /**
@@ -120,6 +129,9 @@ export async function createAppointment(
     p_customer_email: input.customerEmail ?? undefined,
     p_notes: input.notes ?? undefined,
     p_session_token: input.sessionToken ?? undefined,
+    p_party_index: input.partyIndex ?? undefined,
+    p_visit_id: input.visitId ?? undefined,
+    p_for_name: input.forName ?? undefined,
   });
 
   if (error) {
