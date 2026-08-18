@@ -94,7 +94,8 @@ export default async function ConfirmedPage({
           </h1>
 
           <p className="mt-4 text-lg text-ink-muted text-pretty">
-            We have you down for {day.toLowerCase()}. See you then.
+            We have you down for {day.toLowerCase()}. Your time is held — we
+            will ring you the day before to confirm.
           </p>
         </>
       )}

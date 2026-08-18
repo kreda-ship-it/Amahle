@@ -354,6 +354,10 @@ settled, and the map link is correct.
             function and kept somewhere while the customer decides
 - [x] **Confirmation page** — stage C above
 - [ ] Booking confirmation message
+      - **Marking a booking confirmed is Phase 5 work.** The salon rings the
+        customer the day before; `pending` → `confirmed` is that call landing.
+        Nothing can make that change today, so every appointment sits at
+        `pending` until the calendar exists
 - [x] **Audit log writes on every appointment change** — migration 014, at
       `critical` tier, by trigger rather than by application code, so a direct
       API write is logged too

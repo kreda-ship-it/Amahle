@@ -426,6 +426,22 @@ The core table. Written only through `createAppointment()`.
 **Statuses:** `pending`, `confirmed`, `checked_in`, `in_progress`, `completed`,
 `cancelled`, `no_show`, `late_arrival`
 
+`pending` and `confirmed` are not "maybe" and "yes" — every appointment holds its
+slot from the moment it exists, because the exclusion constraint says so. They
+track the salon's confidence that the customer will *turn up*:
+
+| Status | Meaning |
+|---|---|
+| `pending` | Booked. The time is held and nobody else can take it. Not yet reconfirmed with the customer. |
+| `confirmed` | The salon rang the day before and the customer said yes. |
+
+That is why a customer is told "you're booked" on a `pending` appointment: they
+are. Decided 2026-08-18, matching how the salon already works by phone.
+
+**Nothing moves a booking from `pending` to `confirmed` yet.** It is a staff
+action and needs the calendar, so every appointment sits at `pending` until
+Phase 5.
+
 `source` matters: it tells us how much of the salon's booking has actually moved
 online, which is the real measure of whether this project worked.
 
