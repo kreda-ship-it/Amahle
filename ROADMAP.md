@@ -1,6 +1,6 @@
 # ROADMAP.md — Amahle
 
-Last updated: 2026-08-17
+Last updated: 2026-08-18
 
 ---
 
@@ -246,7 +246,13 @@ settled, and the map link is correct.
       on `phone_digits`, a generated column, so punctuation cannot create a second
       Sara. Proven by `test-tenant-isolation.sql`, extended to cover a customer,
       an allergy and a flag: `1, 4, 21, 0, 0, 0, 0, 0, 0, 0`
-- [ ] **`appointments` table** + RLS policies
+- [x] **`appointments` table** + RLS policies — migration 014, 2026-08-17.
+      Three timestamps, not two: `blocked_until` is `ends_at` plus the service
+      buffer, so the calendar cannot book into the cleanup gap. Times and price
+      are filled by a trigger from the service, on both write paths. Stylists
+      see their own schedule with no permission key, via `current_employee_id()`
+      — pulled forward from Phase 5 because it is a row-level rule and belongs
+      with the table
 - [x] **`employee_working_hours` and `employee_time_off` tables** — migration 013,
       2026-08-17. Rota times are `time` not `timestamptz`, so "Tuesday 9am"
       survives a clock change; several rows per day is a split shift, not a bug.
@@ -255,14 +261,29 @@ settled, and the map link is correct.
       grants, which is why availability has to be a database function the booking
       form calls rather than a query the browser runs
 - [ ] Seed the salon's working hours
-- [ ] `createAppointment()` — the one canonical creation path
+- [x] **`createAppointment()` — the one canonical creation path** — migration
+      015 plus `src/lib/appointments/create.ts`, 2026-08-18. The rules are in
+      Postgres and that is forced, not chosen: a customer booking online arrives
+      as `anon`, which has no grant on `customers` or `appointments`, so
+      application code cannot write their booking at all. `source` is derived
+      from who is calling rather than passed in. Proven by
+      `supabase/scripts/test-create-appointment.sql` — five checks, all passing
 - [ ] Availability calculation (service duration, buffers, working hours)
-- [ ] Conflict detection
-- [ ] Customer find-or-create by phone number
+- [x] **Conflict detection** — migration 014. Not a check: an exclusion
+      constraint on `(employee_id, tstzrange(starts_at, blocked_until))`, so the
+      second booking is refused by the database. Checking first leaves a gap
+      between the check and the insert, which is exactly where the website and
+      the receptionist collide. Cancelled and no-show rows stop holding the slot
+- [x] **Customer find-or-create by phone number** — migration 015. Fills
+      blanks, never overwrites: a returning customer typing "Sara" where the
+      salon wrote "Sara T." must not rewrite the record. `normalize_phone()`
+      adds a missing country code from the organization's `country_dial_code`
 - [ ] Public booking form
 - [ ] Confirmation page
 - [ ] Booking confirmation message
-- [ ] Audit log writes on every appointment change
+- [x] **Audit log writes on every appointment change** — migration 014, at
+      `critical` tier, by trigger rather than by application code, so a direct
+      API write is logged too
 
 ### Phase 5 — Staff calendar
 - [ ] Day view
@@ -331,13 +352,12 @@ Nothing here gets built until the salon has used v1 for real, for weeks.
       early. It is a screen over `role_permissions`, and would not have removed a
       single split table — those come from Postgres granting columns to database
       roles, which no amount of application code changes
-- [ ] **Phone number normalisation.** `phone_digits` stops punctuation creating
-      duplicates. It does not add a missing country code — that is the
-      application's job, from an organization setting, in one helper every write
-      path calls. Needs deciding when the booking form is built: where the setting
-      lives (`public_settings` is the candidate — the public form must read it),
-      and whether `libphonenumber-js` is worth a dependency or fifteen hand-written
-      lines will do for a US salon
+- [x] **Phone number normalisation** — settled 2026-08-18. `normalize_phone()`
+      in migration 015, reading `country_dial_code` from the organization's
+      `public_settings`. No dependency: `libphonenumber-js` was not worth it for
+      a US salon, and the rule is about twenty lines. The limit to remember is
+      that it cannot know a country drops a leading zero when the code is added
+      — revisit if a salon outside the US onboards
 - [ ] Domain name — registered? Who controls it?
 - [ ] SMS provider and cost, if we add reminders
 - [ ] Does the salon have photos for the gallery, or do we need to arrange them?

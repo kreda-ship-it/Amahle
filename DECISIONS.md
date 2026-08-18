@@ -379,6 +379,33 @@ be gated at least as tightly or it is the back door around all of this.
 its table, and adding a third table for one column starts to look absurd. That is
 where the view earns its complexity.
 
+## 28. The booking path is a database function, not application code — _2026-08-18_
+**Decision:** `create_appointment()` and `find_or_create_customer()` live in
+Postgres as `security definer` functions. `src/lib/appointments/create.ts` is a
+thin wrapper that calls one of them and translates errors for a form.
+**Why:** Not a preference — it is forced by decisions already made. A customer
+booking online is not logged in and reaches the database as `anon`, which
+migrations 012 and 014 grant *nothing at all* on `customers` and `appointments`.
+Application code holding the anon key therefore cannot write their booking, and
+granting it the privilege would undo the protection those migrations exist for.
+A `security definer` function runs with its owner's rights, so the checks inside
+it are the only way a row gets in. The staff path could have been TypeScript;
+the public path could not, and PROJECT.md requires one path for both.
+**Alternative rejected:** The whole path in TypeScript, using the service role
+key on the server. It would work, and it bypasses *every* RLS policy in the
+database to do it — trading a boundary the database enforces for one that holds
+only as long as nobody writes a careless query. Also rejected: giving `anon`
+narrow insert privileges, which reopens direct writes to the two tables most
+worth protecting.
+**Consequence accepted:** the rules are written in a language the developer
+knows less well, and are harder to debug than TypeScript would be. Mitigated by
+`supabase/scripts/test-create-appointment.sql`, which exercises the whole path
+inside a transaction that rolls back.
+**Revisit when:** Never for the public path. If customer accounts ever arrive
+(DECISIONS #20), a logged-in customer would have privileges of their own and the
+argument changes shape — but the function would stay, because by then there
+would be three callers rather than two.
+
 ---
 
 ## Template for new entries

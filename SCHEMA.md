@@ -155,7 +155,7 @@ don't are the ones that matter.
 |---|---|---|
 | `profile_id` | uuid, nullable | Their login, if they have one. Null is normal. Unique among live rows. |
 | `full_name` | text | Not unique — two people can share a name |
-| `photo_url` | text | For the public team page |
+| `photo_path` | text | Storage path for the public team page. A path, never a URL — migration 011 |
 | `position` | text | e.g. "Senior Stylist" |
 | `bio` | text | Public-facing |
 | `phone` | text | **Staff personal contact.** Never visible to anon. |
@@ -164,7 +164,7 @@ don't are the ones that matter.
 | `is_active` | boolean | Still employed |
 | `display_order` | int | Order on the team page |
 
-**What anonymous visitors can read:** `id`, `org_id`, `full_name`, `photo_url`,
+**What anonymous visitors can read:** `id`, `org_id`, `full_name`, `photo_path`,
 `position`, `bio`, `is_bookable`, `display_order` — active, live rows only.
 `phone`, `email` and `profile_id` are not granted, so a stylist's mobile number
 cannot reach the public site even by accident.
@@ -256,13 +256,13 @@ What the salon offers. The first table anonymous visitors read.
 | `duration_minutes` | int | How long it takes |
 | `buffer_minutes` | int | Cleanup/prep time after. **Internal** — never visible to anon. |
 | `is_bookable_online` | boolean | False means the service still appears on the public price list, with a "call us" note instead of a Book button. It does **not** hide the service. |
-| `image_url` | text | |
+| `image_path` | text | |
 | `display_order` | int | |
 | `is_active` | boolean | |
 
 **What anonymous visitors can read:** `id`, `org_id`, `name`, `description`,
 `category`, `price`, `price_display`, `duration_minutes`, `is_bookable_online`,
-`image_url`, `display_order` — and only rows that are live and active. `org_id`
+`image_path`, `display_order` — and only rows that are live and active. `org_id`
 has to be granted because filtering a query by a column requires SELECT
 privilege on it.
 
@@ -428,6 +428,50 @@ The core table. Written only through `createAppointment()`.
 
 `source` matters: it tells us how much of the salon's booking has actually moved
 online, which is the real measure of whether this project worked.
+
+## How an appointment gets created
+
+Three functions in Postgres, added by migration 015. Together they are the only
+way an appointment comes into existence — PROJECT.md's one-canonical-path rule,
+enforced rather than agreed.
+
+| Function | What it does |
+|---|---|
+| `normalize_phone(phone, dial_code)` | One spelling of a phone number. Strips punctuation, keeps a `+` prefix, turns a leading `00` into `+`, and adds the salon's country code to a local number. |
+| `find_or_create_customer(org, phone, name, email)` | Match a customer by phone or make one. |
+| `create_appointment(...)` | Every rule, then the insert. |
+
+**Why these are in the database and not in `/lib`.** A customer booking online
+is not logged in — they arrive as `anon`, which has no grant on `customers` or
+`appointments` at all. Application code cannot write their booking, and giving
+it the privilege would undo the point of those grants. `security definer` is the
+way through: the function runs with its owner's rights, so its checks are the
+only way in. See DECISIONS #28.
+
+**`source` is derived, never passed.** If `current_profile_id()` is null the
+booking is `online`, otherwise `staff`. PROJECT.md calls that column the real
+measure of whether this project worked, and a parameter is a way for it to be
+wrong. `price`, `ends_at` and `blocked_until` are likewise not parameters — the
+trigger computes them, so no caller can quote itself a different price.
+
+**The slot is not checked, it is claimed.** `create_appointment()` does not look
+to see whether the time is free. It inserts, and the exclusion constraint
+refuses a clash. Checking first leaves a gap between the check and the insert,
+which is exactly where the website and the receptionist collide. The caller sees
+SQLSTATE `23P01` and turns it into "that time was just taken".
+
+**What it does not do.** Working hours and time off are not consulted. A booking
+at 3am on a closed Sunday is accepted. That is the availability calculation, and
+until it exists the booking form must only offer times that are genuinely free.
+
+**`find_or_create_customer` fills blanks and never overwrites.** A returning
+customer typing "Sara" where the salon wrote "Sara T." must not rewrite the
+record — the salon's version is the curated one. An email is added only where
+there is none.
+
+**Set `country_dial_code`** in the organization's `public_settings`, or local
+numbers are stored as bare digits and will not match the same number written
+internationally. It is tenant data, so no migration writes it.
 
 ## audit_log
 
