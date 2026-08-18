@@ -972,6 +972,10 @@ export type Database = {
         Args: { p_dial_code?: string; p_phone: string }
         Returns: string
       }
+      round_up_to_minutes: {
+        Args: { p_minutes: number; p_ts: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

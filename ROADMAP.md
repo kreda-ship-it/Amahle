@@ -285,6 +285,24 @@ settled, and the map link is correct.
       blanks, never overwrites: a returning customer typing "Sara" where the
       salon wrote "Sara T." must not rewrite the record. `normalize_phone()`
       adds a missing country code from the organization's `country_dial_code`
+- [ ] **Wash-aware scheduling.** Specified 2026-08-18, not built. Washing is done
+      by different people from the stylists, so a customer needing a wash can
+      arrive *before* the stylist is free — the washer takes them while the
+      stylist finishes the previous client. The salon's rule: start 5 minutes
+      before the previous appointment ends, no buffer.
+      - A wash takes about **30 minutes**
+      - **Three wash sinks**, so at most three customers can be washed at once.
+        The count must be editable — sinks get added, and one can be broken
+      - Each service carries a **usual answer**, and the booking form asks anyway
+        so a customer who washed at home can say so
+      - **This needs a schema change.** The exclusion constraint currently
+        reserves the stylist from `starts_at` to `blocked_until`; a customer
+        arriving before the previous appointment ends makes those overlap and
+        the database refuses the booking. When the stylist is *needed* has to
+        become separate from when the customer *arrives*
+      - **Three sinks is a capacity limit, not a pairwise clash**, so no
+        exclusion constraint can express it. It needs a count inside
+        `create_appointment()`, and a lock if it is to be airtight
 - [ ] Public booking form
 - [ ] Confirmation page
 - [ ] Booking confirmation message

@@ -469,8 +469,40 @@ Materialising slots would mean every rota edit, cancellation and booking has to
 remember to update them, and the day one forgets is the day the salon
 double-books someone and stops trusting the software.
 
-**Slots step by duration + buffer**, back to back, from the start of each working
-window.
+**Slots are anchored to real appointments, not to a grid.** Migration 018. The
+working window minus every appointment's reserved span and every period of time
+off gives a set of free gaps; each gap offers times starting at its own
+beginning:
+
+```
+previous appointment ends   10:28
+plus that service's buffer  10:33
+rounded up to a tidy 5      10:35   <- offered
+```
+
+Nothing is wasted waiting for a grid line. Postgres does the subtraction itself
+with a multirange — a set of ranges treated as one value — so overlapping
+bookings merge without any loop to get wrong.
+
+**Empty stretches still need a rhythm.** "After the previous appointment" has no
+answer on a day with nothing booked, so each gap steps after its anchor. Two
+settings in `public_settings`:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `slot_rounding_minutes` | 5 | Turns 10:33 into 10:35 |
+| `slot_step_minutes` | 105 | An empty day offers 09:00, 10:45, 12:30… |
+
+105 is the salon's own choice, made 2026-08-18: it nudges customers into a tidy
+sequence rather than scattering bookings. Its cost is real — on an empty day
+someone wanting 09:30 is refused while the stylist sits free. One `update`
+changes it if that starts losing bookings.
+
+**A slot must fit its service and its buffer inside the gap**, because the next
+appointment begins the moment the gap ends. The exception is the gap running to
+closing time, where the service must finish by close but the buffer may
+overhang — cleanup after the last customer harms nobody. Without that exception
+the last appointment of every day quietly disappears.
 
 **The service must finish by closing time; the buffer may overhang it.** A
 one-hour cut at 4pm is offered on a day that shuts at 5, even though cleanup runs
