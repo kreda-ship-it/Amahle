@@ -353,11 +353,15 @@ settled, and the map link is correct.
             is not, provisional holds have to be passed into the availability
             function and kept somewhere while the customer decides
 - [x] **Confirmation page** — stage C above
-- [ ] Booking confirmation message
-      - **Marking a booking confirmed is Phase 5 work.** The salon rings the
-        customer the day before; `pending` → `confirmed` is that call landing.
-        Nothing can make that change today, so every appointment sits at
-        `pending` until the calendar exists
+- [~] **Booking confirmation message — deferred 2026-08-18.** No automated
+      message in v1. The confirmation page at `/book/confirmed/<reference>` is
+      the confirmation: immediate, permanent, and something the customer can
+      come back to. The salon texts by hand from the number it already uses, as
+      it does today. DECISIONS #29
+      - **Marking a booking confirmed is Phase 5 work.** The salon rings or
+        texts the customer the day before; `pending` → `confirmed` is that
+        landing. Nothing can make that change today, so every appointment sits
+        at `pending` until the calendar exists
 - [x] **Audit log writes on every appointment change** — migration 014, at
       `critical` tier, by trigger rather than by application code, so a direct
       API write is logged too
@@ -436,7 +440,13 @@ Nothing here gets built until the salon has used v1 for real, for weeks.
       that it cannot know a country drops a leading zero when the code is added
       — revisit if a salon outside the US onboards
 - [ ] Domain name — registered? Who controls it?
-- [ ] SMS provider and cost, if we add reminders
+- [ ] **SMS provider, cost, and A2P 10DLC.** Deferred 2026-08-18, not
+      dismissed. Whenever automated texts are wanted, US carriers require A2P
+      10DLC registration — the business and then the campaign — before messages
+      from an ordinary 10-digit number are delivered reliably. Unregistered
+      traffic is **silently filtered**, not rejected, so it looks like it works.
+      Days to weeks, waiting on someone else's queue, so it is the item to start
+      first rather than last
 - [ ] Does the salon have photos for the gallery, or do we need to arrange them?
 - [ ] Deposit / no-show policy — does v1 need to display one?
 - [ ] Which country's data protection law applies (GDPR / POPIA / other)?

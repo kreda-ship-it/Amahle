@@ -406,6 +406,26 @@ inside a transaction that rolls back.
 argument changes shape — but the function would stay, because by then there
 would be three callers rather than two.
 
+## 29. No automated messages in v1 — _2026-08-18_
+**Decision:** Nothing is sent to a customer automatically. The confirmation page
+at `/book/confirmed/<reference>` is the confirmation, and the salon texts or
+rings by hand from the number it already uses.
+**Why:** The page is immediate, permanent, and returnable — more than the
+customer gets from most salons. Against that, an automated text costs a
+provider account, a per-message fee, and A2P 10DLC registration before US
+carriers will deliver it reliably; unregistered traffic is silently filtered
+rather than rejected, so the failure mode is believing it works. That is a
+multi-week external dependency bought to automate something the salon already
+does by hand and does well.
+**Alternative rejected:** Email, which needs no registration and could ship in
+an afternoon — but email is deliberately optional on the booking form
+(DECISIONS #8), so it would reach only some customers while looking like it
+reached all of them. A partial notification is worse than an honest absence.
+**Revisit when:** The salon is doing enough online bookings that texting each
+one by hand is a chore, or no-shows become a measured problem that reminders
+would address. Start the 10DLC registration before writing any code — it waits
+on someone else's queue and nothing we build shortens it.
+
 ---
 
 ## Template for new entries
