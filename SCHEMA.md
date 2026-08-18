@@ -32,6 +32,14 @@ tripping `profiles`' own policy and recursing forever. See DECISIONS.md #16.
 access to *every column* of it. Where a column must stay hidden — such as
 `organizations.private_settings` — that is a column-level `grant`, not a policy.
 
+**Where that rule stops working.** A grant is granted to a *Postgres* role, and
+there are only three: `anon`, `authenticated`, `service_role`. It separates the
+public internet from logged-in staff. It cannot separate one member of staff from
+another, because they all connect as `authenticated`. When a column needs a
+different audience *within* the salon, it moves to its own table and the rule
+becomes a row-level policy calling `has_permission()`. That is why
+`customer_care_notes` exists. See DECISIONS #27.
+
 **Nothing has DELETE.** No role is granted `delete` on any table. Soft-delete is
 enforced by the database, not by discipline. Deleting means updating `deleted_at`.
 
@@ -167,25 +175,72 @@ which governs `profiles`, i.e. who can log in. Roster and logins are two jobs.
 
 ## employee_working_hours
 
-Regular weekly availability.
+The regular working week. Migration 013.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `employee_id` | uuid | |
-| `day_of_week` | int | 0 = Sunday |
-| `start_time` | time | |
-| `end_time` | time | |
+| `employee_id` | uuid | References `employees (id, org_id)` |
+| `day_of_week` | int | 0 = Sunday, matching Postgres `extract(dow)` and JavaScript `getDay()`. Do not renumber. |
+| `start_time` | time | Local salon time |
+| `end_time` | time | Must be later than `start_time` |
+
+**Several rows per day is normal, not a bug.** 09:00–13:00 plus 14:00–18:00 is a
+stylist with a long lunch, which is how most salon rotas look. There is
+deliberately no unique constraint on `(employee_id, day_of_week)`.
+
+Overlapping rows are therefore possible. Availability unions them, so the result
+is correct either way — the row is untidy, not wrong. Refusing the overlap needs
+an exclusion constraint and the `btree_gist` extension, which is a database
+dependency bought to prevent a cosmetic problem.
+
+**`time`, not `timestamptz`, and that matters.** "Tuesday 9am" is a fact about the
+salon's own clock and stays 9am when the clocks change. `organizations.timezone`
+turns it into a real moment when availability is computed. Storing it as
+`timestamptz` would freeze one particular Tuesday into the rota.
+
+`end_time > start_time` means **no overnight shifts** — a salon open past midnight
+is two rows on two days. Fine for a hair salon; the constraint to revisit if a
+24-hour spa ever onboards.
 
 ## employee_time_off
 
-Exceptions — holidays, sick days, blocked time.
+Exceptions — holidays, sick days, blocked time. Migration 013.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `employee_id` | uuid | |
+| `employee_id` | uuid | References `employees (id, org_id)` |
 | `starts_at` | timestamptz | |
-| `ends_at` | timestamptz | |
-| `reason` | text | |
+| `ends_at` | timestamptz | Must be later than `starts_at` |
+
+`timestamptz` here, unlike the rota above, because a holiday is a real moment
+rather than a repeating fact about the clock.
+
+**There is no `reason` column, deliberately.** The calendar needs to know a
+stylist is unavailable on the 14th, not why. "Sick" in a free-text box is health
+data about an employee, readable by every colleague, and protecting it properly
+would mean a third table with its own policies, audit trigger and permission key.
+Unlike a customer's allergies — a legal-exposure question about someone who never
+consented to be in this database — a reason for leave does not clear that bar for
+a five-person salon. If the salon asks to record why, that is a table then, with a
+real requirement behind it. Decided 2026-08-17.
+
+## What both availability tables have in common
+
+Reading needs no permission beyond belonging to the organization — everyone needs
+to know who is working today; that is the calendar. Editing needs
+`employee.record.manage`, the existing roster key. Setting someone's rota is
+managing the team, and DECISIONS #24 only justifies a second key where the job
+differs.
+
+**No `anon` grants on either, and that shapes the booking form.** The public form
+must show free slots, which sounds like it needs to read these tables. It does
+not, and must not: a browser that can read working hours can read who works when,
+and a browser doing availability arithmetic is one that can be lied to about the
+result. Availability is computed by a database function the form calls — same
+principle as `createAppointment()` — which returns free slots and nothing else.
+
+Both audit at `routine` tier. They carry no personal detail, which is now true by
+construction rather than by good intentions.
 
 ## services
 
@@ -250,19 +305,59 @@ at booking time.
 | Column | Type | Meaning |
 |---|---|---|
 | `full_name` | text | |
-| `phone` | text | The matching key — unique per org |
+| `phone` | text | As the customer gave it, punctuation and all. Displayed and dialled. |
+| `phone_digits` | text, **generated** | `phone` with every non-digit stripped. Computed by Postgres. This is what uniqueness is enforced on — unique per org among live rows. |
 | `email` | text, nullable | |
 | `birthday` | date, nullable | |
-| `notes` | text | General notes |
-| `allergies` | text | **Sensitive** |
-| `sensitivities` | text | **Sensitive** |
-| `hair_formula` | text | **Sensitive** |
-| `preferred_employee_id` | uuid, nullable | |
-| `first_visit_at` | timestamptz | |
-| `last_visit_at` | timestamptz | |
+| `notes` | text | One free-text operational field — "parks round the back". Not the internal notes system, which is out of v1. |
+| `preferred_employee_id` | uuid, nullable | References `employees (id, org_id)` |
+| `first_visit_at` | timestamptz, nullable | |
+| `last_visit_at` | timestamptz, nullable | |
 
-Sensitive fields are subject to field-level permissions. A stylist sees
-allergies. Not everyone sees everything.
+**Why matching uses `phone_digits`.** `+1 (202) 555-0143` and `+12025550143` are
+one person and two strings. A generated column is recomputed by Postgres on every
+write, so the second insert is refused by the database — not by a tidy input box
+in a browser that an import, a paste, or the SQL editor never sees.
+
+It strips punctuation. It does **not** invent a country code: `202 555 0143` and
+`+1 202 555 0143` remain two customers. Teaching the database that ten digits
+means American would hardcode one country into a multi-tenant schema. Adding the
+dial code is the application's job, from the organization's own setting, in one
+helper every write path calls. That arrives with the booking form.
+
+Nobody can write `phone_digits` — Postgres refuses writes to a generated column.
+Note that the generated TypeScript types get this wrong and mark it writable and
+nullable. Ignore them on this one column.
+
+**No `anon` grants.** Not a restricted list — nothing at all. The public booking
+form does not touch this table directly; it goes through `createAppointment()`.
+
+## customer_care_notes
+
+The sensitive half of a customer record: allergies, sensitivities, hair formula.
+One live row per customer.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `customer_id` | uuid | References `customers (id, org_id)`. Unique among live rows. |
+| `allergies` | text | |
+| `sensitivities` | text | |
+| `hair_formula` | text | |
+
+**Why this is a separate table and not three columns on `customers`.** Because
+"RLS hides rows, grants hide columns" does not reach this case. A grant is
+granted to a *Postgres* role, and every logged-in member of staff connects as the
+same one, `authenticated`. A column grant can say "all staff" or "no staff". It
+cannot say "stylists yes, receptionists no", which is precisely what DECISIONS #9
+requires. Moving the fields to their own table turns field-level into row-level,
+where `has_permission()` can be asked directly. See DECISIONS #27.
+
+Reading needs `customer.view_sensitive`. Writing needs that **and**
+`customer.manage` — `manage` alone is the Receptionist, who may fix a phone
+number and has no business editing a formula she cannot read.
+
+Not to be confused with `customers.notes`, which is general and operational.
+Anyone who can see the customer can see that one.
 
 ## customer_flags
 
@@ -270,13 +365,46 @@ Internal labels. Separate table so each flag can carry its own visibility rule.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `customer_id` | uuid | |
-| `flag_type` | text | e.g. `vip`, `frequent_late`, `staff_safety_alert` |
+| `customer_id` | uuid | References `customers (id, org_id)` |
+| `flag_type` | text | e.g. `vip`, `frequent_late`, `staff_safety_alert`. Free text, not an enum — a salon inventing a label it needs is not a schema change. |
 | `note` | text | |
-| `created_by` | uuid | Which profile added it |
-| `min_permission` | text | Permission key required to see this flag |
+| `created_by` | uuid, nullable | Which profile added it. References `profiles (id, org_id)`. |
+| `min_permission` | text | Permission key required to see this flag. Defaults to `customer.view`. |
 
 Safety and financial flags are restricted. Preference flags are not.
+
+`min_permission` **references `permissions (key)`**, so it can only hold a key
+that exists. Without that constraint a typo produces a flag nobody on earth can
+read — including the owner — and nothing reports it as an error.
+
+The write policies check `has_permission(min_permission)` too, so nobody can
+create or edit a flag into an audience they are not in themselves.
+
+## The four customer permissions
+
+| | `customer.view` | `customer.manage` | `customer.view_sensitive` | `customer.view_financial` |
+|---|---|---|---|---|
+| Owner | ✓ | ✓ | ✓ | ✓ |
+| Manager | ✓ | ✓ | ✓ | ✓ |
+| Receptionist | ✓ | ✓ | — | ✓ |
+| Stylist | ✓ | — | ✓ | — |
+
+Receptionist gets financial because they are the person at the desk when someone
+owes money, and no clinical detail because a receptionist has no use for a hair
+formula. Stylist gets allergies because they put chemicals on people.
+
+These are **starting rows in `role_permissions`**, not fixed rules — the owner
+changes who holds what by changing that data, and the screen for it arrives in
+Phase 6. Note the granularity: permissions attach to a *role*, not to a person.
+Per-staff-member overrides do not exist. See the open question in ROADMAP.
+
+`customer.view_financial` is a visibility key for a *flag*. It is not the start of
+financial management, which stays out of v1.
+
+Reading `customers` requires `customer.view`, not merely membership of the
+organization. That is a deliberate difference from `services` and `employees`,
+where any member may read because the internet already could. Nothing about a
+customer is public.
 
 ## appointments
 
@@ -339,6 +467,13 @@ changes nothing but `updated_at` is not recorded at all.
 **Nothing can read it yet** — RLS is on with no policies and no grants. It
 collects data now and becomes readable when a screen needs it and earns an
 `audit.view` permission.
+
+**Since migration 012 this table holds copies of allergies and hair formulas**,
+inside `changes`. That is correct and it is what an audit trail is for. It is
+also why "nothing can read it yet" now matters more than it did: whenever the
+viewing screen is built, its gate must be at least as strict as
+`customer.view_sensitive`, or it becomes the back door around every policy on
+`customer_care_notes`.
 
 Rows created before migration 006 — the Kedus organization, its roles, and the
 first Owner profile — do not appear. Backfilling would mean inventing timestamps

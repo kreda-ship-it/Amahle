@@ -224,7 +224,8 @@ settled, and the map link is correct.
       `ca0f032`
 - [ ] **DECISIONS #26** — theme tokens in, never raw CSS from the database.
       Why the token structure exists now and the database-driven half does not
-- [ ] **SESSION_LOG** entries for 2026-08-15 (app half) and 2026-08-17
+- [ ] **SESSION_LOG** entry for 2026-08-15 (the app half). Both 2026-08-17
+      entries are written
 
 ### The salon's own homework
 
@@ -236,9 +237,23 @@ settled, and the map link is correct.
 ---
 
 ### Phase 4 — Booking
-- [ ] **`customers` and `customer_flags` tables** + RLS policies. Sensitive fields — allergies, sensitivities, formulas — so field-level permissions are designed here, against real screens
+- [x] **`customers`, `customer_care_notes` and `customer_flags` tables** + RLS
+      policies — migration 012, 2026-08-17. Field-level permissions turned out to
+      need a *separate table*, not column grants: a grant is granted to a Postgres
+      role and all staff share one, so it can say "all staff" or "no staff" but
+      never "stylists yes, receptionists no". DECISIONS #27. Four new keys, and
+      the first permissions Receptionist and Stylist have ever held. Matching is
+      on `phone_digits`, a generated column, so punctuation cannot create a second
+      Sara. Proven by `test-tenant-isolation.sql`, extended to cover a customer,
+      an allergy and a flag: `1, 4, 21, 0, 0, 0, 0, 0, 0, 0`
 - [ ] **`appointments` table** + RLS policies
-- [ ] **`employee_working_hours` and `employee_time_off` tables** — availability can't be computed without them
+- [x] **`employee_working_hours` and `employee_time_off` tables** — migration 013,
+      2026-08-17. Rota times are `time` not `timestamptz`, so "Tuesday 9am"
+      survives a clock change; several rows per day is a split shift, not a bug.
+      No `reason` column on time off — deliberately, see SCHEMA.md. No new
+      permission key: editing a rota is `employee.record.manage`. No `anon`
+      grants, which is why availability has to be a database function the booking
+      form calls rather than a query the browser runs
 - [ ] Seed the salon's working hours
 - [ ] `createAppointment()` — the one canonical creation path
 - [ ] Availability calculation (service duration, buffers, working hours)
@@ -261,8 +276,13 @@ settled, and the map link is correct.
 ### Phase 6 — Records and permissions
 - [ ] Customer list and detail view
 - [ ] Customer history (past appointments)
-- [ ] Customer allergies / sensitivities / formulas
-- [ ] Field-level permissions on sensitive customer fields
+- [ ] Customer allergies / sensitivities / formulas — the screen. The data and
+      its policies landed in migration 012
+- [x] **Field-level permissions on sensitive customer fields** — done in the
+      database by migration 012, ahead of this phase, because the tables had to
+      be built and there is no such thing as building them without deciding
+      this. Enforced as a separate table rather than column grants; DECISIONS #27.
+      What remains here is a screen, not a mechanism
 - [ ] Employee list and profiles
 - [ ] Working hours and availability management
 - [ ] Roles and permissions management UI
@@ -287,6 +307,37 @@ Nothing here gets built until the salon has used v1 for real, for weeks.
 
 ## Open questions
 
+- [ ] **Permissions per staff member, not just per role.** Raised 2026-08-17 while
+      approving the customer permission grid. Today `role_permissions` attaches a
+      permission to a *role*: change what a Stylist can see and every stylist
+      changes with them. The ask was to vary it per person — "Hanna can see
+      financial flags, other stylists can't." Not built, and deliberately not
+      smuggled into migration 012: it means a new table of per-profile overrides
+      and a rewrite of `has_permission()`. Decide it in Phase 6 alongside the
+      permissions UI, and write it up as a DECISIONS entry either way — including
+      if the answer is "roles are enough, make more roles".
+
+      **Why this one is safe to defer, when `org_id` and `audit_log` were not.**
+      Asked 2026-08-17: are we accumulating structure we will regret by putting
+      the permissions work late? No — and the reason is worth keeping. Multi-
+      tenancy and the audit trail had to be day-one because they touch every
+      table and every write path; retrofitting means retrofitting everywhere.
+      Every policy in this database asks `has_permission()`, and that is **one
+      function**. Adding per-profile overrides later changes that function and
+      adds a table. No policy changes. The single chokepoint was built on purpose
+      so this decision could wait, and it can.
+
+      Note also what would *not* have helped: building the Phase 6 permissions UI
+      early. It is a screen over `role_permissions`, and would not have removed a
+      single split table — those come from Postgres granting columns to database
+      roles, which no amount of application code changes
+- [ ] **Phone number normalisation.** `phone_digits` stops punctuation creating
+      duplicates. It does not add a missing country code — that is the
+      application's job, from an organization setting, in one helper every write
+      path calls. Needs deciding when the booking form is built: where the setting
+      lives (`public_settings` is the candidate — the public form must read it),
+      and whether `libphonenumber-js` is worth a dependency or fifteen hand-written
+      lines will do for a US salon
 - [ ] Domain name — registered? Who controls it?
 - [ ] SMS provider and cost, if we add reminders
 - [ ] Does the salon have photos for the gallery, or do we need to arrange them?

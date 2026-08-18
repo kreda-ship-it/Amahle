@@ -13,7 +13,7 @@
 -- p_user_id below is the Kedus owner. Change it to test as someone else.
 --
 -- Last run against Salon dev on 2026-08-17 — passed:
---   1, 4, 21, 0, 0, 0, 0, 0, 0, 0
+--   1, 4, 21, 0, 0, 0, 0, 0, 0, 0  (before migration 013)
 -- Expected counts change as migrations land:
 --   007  services table; service.manage to Owner and Manager (4 → 6)
 --   008  employees and employee_services; employee.record.manage to
@@ -25,6 +25,15 @@
 --        columns. Four new keys, and the first permissions Receptionist
 --        and Stylist have ever held, so the count jumps 8 → 21:
 --          Owner 9, Manager 7, Receptionist 3, Stylist 2
+--   013  employee_working_hours and employee_time_off, and two more
+--        columns. The permission count does NOT move: editing a rota is
+--        employee.record.manage, which already existed, and time off
+--        carries no reason column to protect
+--   014  appointments, and a thirteenth column. Three new keys, to
+--        Owner, Manager and Receptionist (21 → 30):
+--          Owner 12, Manager 10, Receptionist 6, Stylist 2
+--        Stylist gets none of them and still sees their own schedule —
+--        that is the select policy, not a permission
 
 begin;
 
@@ -72,6 +81,34 @@ begin;
   from public.customers c
   where c.full_name = 'Other Salon Secret Customer';
 
+  -- The other salon's rota and time off. The sentinel values are
+  -- deliberately absurd — no salon opens at 03:33 or books leave in
+  -- 2099 — so the counts below can identify these rows without
+  -- joining to an employee the test user cannot see anyway.
+  insert into public.employee_working_hours
+    (org_id, employee_id, day_of_week, start_time, end_time)
+  select e.org_id, e.id, 2, '03:33', '04:44'
+  from public.employees e
+  where e.full_name = 'Other Salon Secret Stylist';
+
+  insert into public.employee_time_off (org_id, employee_id, starts_at, ends_at)
+  select e.org_id, e.id, '2099-01-01T00:00:00Z', '2099-01-02T00:00:00Z'
+  from public.employees e
+  where e.full_name = 'Other Salon Secret Stylist';
+
+  -- An appointment joining all three of the other salon's rows. Note
+  -- that ends_at, blocked_until and price are not supplied — the
+  -- trigger fills them from the service, which this also proves.
+  insert into public.appointments
+    (org_id, customer_id, employee_id, service_id, starts_at, source)
+  select c.org_id, c.id, e.id, s.id, '2099-06-01T10:00:00Z', 'staff'
+  from public.customers c
+  join public.employees e on e.org_id = c.org_id
+  join public.services  s on s.org_id = c.org_id
+  where c.full_name = 'Other Salon Secret Customer'
+    and e.full_name = 'Other Salon Secret Stylist'
+    and s.name      = 'Other Salon Secret Service';
+
   -- Become the Kedus owner. set_config with `true` scopes it to this
   -- transaction; auth.uid() reads the `sub` claim from here.
   select set_config(
@@ -82,20 +119,22 @@ begin;
   set local role authenticated;
 
   -- At this moment the database holds TWO organizations, EIGHT roles,
-  -- FORTY-TWO role_permissions, and — belonging to the other salon —
-  -- ONE service, ONE employee, ONE gallery image, ONE customer, ONE
-  -- care note and ONE flag.
-  -- Expected result: 1, 4, 21, 0, 0, 0, 0, 0, 0, 0.
+  -- SIXTY role_permissions, and — belonging to the other salon — ONE
+  -- service, ONE employee, ONE gallery image, ONE customer, ONE care
+  -- note, ONE flag, ONE rota entry, ONE period of leave and ONE
+  -- appointment.
+  -- Expected result: 1, 4, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.
   --
-  -- The seven zeroes are the point. Every one of those rows exists.
+  -- The ten zeroes are the point. Every one of those rows exists.
   -- None is visible. Not because the query filtered them out — because
   -- Postgres refuses to hand them over.
   --
-  -- The last three matter more than they look. The Kedus owner holds
-  -- customer.view AND customer.view_sensitive, so those zeroes are not
-  -- a permission being denied — they are the tenant boundary holding
-  -- against someone who has every relevant permission there is. Had we
-  -- tested as a Stylist, a zero would have proved nothing.
+  -- The gated ones — the care note and the flag — matter more than they
+  -- look. The Kedus owner holds both customer.view and
+  -- customer.view_sensitive, so those zeroes are not a permission being
+  -- denied. They are the tenant boundary holding against someone who
+  -- has every relevant permission there is. Tested as a Stylist, a zero
+  -- would have proved nothing.
   select (select count(*) from public.organizations)                              as organizations_visible,
          (select count(*) from public.roles)                                      as roles_visible,
          (select count(*) from public.role_permissions)                           as role_permissions_visible,
@@ -111,6 +150,12 @@ begin;
          (select count(*) from public.customer_care_notes
            where allergies = 'Other salon secret allergy')                        as other_care_note_visible,
          (select count(*) from public.customer_flags
-           where note = 'Other salon secret flag')                                as other_flag_visible;
+           where note = 'Other salon secret flag')                                as other_flag_visible,
+         (select count(*) from public.employee_working_hours
+           where start_time = '03:33')                                            as other_hours_visible,
+         (select count(*) from public.employee_time_off
+           where starts_at = '2099-01-01T00:00:00Z')                              as other_time_off_visible,
+         (select count(*) from public.appointments
+           where starts_at = '2099-06-01T10:00:00Z')                              as other_appointment_visible;
 
 rollback;

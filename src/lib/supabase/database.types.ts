@@ -14,6 +14,99 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          blocked_until: string
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          deleted_at: string | null
+          employee_id: string
+          ends_at: string
+          id: string
+          notes: string | null
+          org_id: string
+          price: number
+          service_id: string
+          source: string
+          starts_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          blocked_until: string
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          deleted_at?: string | null
+          employee_id: string
+          ends_at: string
+          id?: string
+          notes?: string | null
+          org_id: string
+          price: number
+          service_id: string
+          source: string
+          starts_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          blocked_until?: string
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          deleted_at?: string | null
+          employee_id?: string
+          ends_at?: string
+          id?: string
+          notes?: string | null
+          org_id?: string
+          price?: number
+          service_id?: string
+          source?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_created_by_same_org"
+            columns: ["created_by", "org_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "appointments_customer_same_org"
+            columns: ["customer_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "appointments_employee_same_org"
+            columns: ["employee_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "appointments_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_service_same_org"
+            columns: ["service_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: string
@@ -302,6 +395,105 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "services"
             referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      employee_time_off: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          employee_id: string
+          ends_at: string
+          id: string
+          org_id: string
+          starts_at: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          employee_id: string
+          ends_at: string
+          id?: string
+          org_id: string
+          starts_at: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          employee_id?: string
+          ends_at?: string
+          id?: string
+          org_id?: string
+          starts_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_time_off_employee_same_org"
+            columns: ["employee_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "employee_time_off_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      employee_working_hours: {
+        Row: {
+          created_at: string
+          day_of_week: number
+          deleted_at: string | null
+          employee_id: string
+          end_time: string
+          id: string
+          org_id: string
+          start_time: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          day_of_week: number
+          deleted_at?: string | null
+          employee_id: string
+          end_time: string
+          id?: string
+          org_id: string
+          start_time: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          day_of_week?: number
+          deleted_at?: string | null
+          employee_id?: string
+          end_time?: string
+          id?: string
+          org_id?: string
+          start_time?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_working_hours_employee_same_org"
+            columns: ["employee_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "employee_working_hours_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -736,6 +928,7 @@ export type Database = {
         }
         Returns: string
       }
+      current_employee_id: { Args: never; Returns: string }
       current_org_id: { Args: never; Returns: string }
       current_profile_id: { Args: never; Returns: string }
       has_permission: { Args: { p_key: string }; Returns: boolean }
