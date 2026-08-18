@@ -37,6 +37,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9,
     },
     {
+      // Second only to the price list: the thing a searcher most wants to do
+      // once they have decided. Its query strings are deliberately absent —
+      // /book?service=… is a step in a flow, not a page worth indexing.
+      url: absoluteUrl("/book"),
+      lastModified: updated,
+      changeFrequency: "monthly",
+      priority: 0.9,
+    },
+    {
       url: absoluteUrl("/team"),
       lastModified: updated,
       changeFrequency: "monthly",

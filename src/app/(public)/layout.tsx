@@ -180,6 +180,11 @@ export default async function PublicLayout({
                   Visit Us
                 </Link>
               </li>
+              <li>
+                <Link href="/book" className="font-medium text-brand hover:underline">
+                  Book Online
+                </Link>
+              </li>
             </ul>
           </nav>
 
