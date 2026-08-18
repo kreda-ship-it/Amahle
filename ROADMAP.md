@@ -296,7 +296,7 @@ settled, and the map link is correct.
       blanks, never overwrites: a returning customer typing "Sara" where the
       salon wrote "Sara T." must not rewrite the record. `normalize_phone()`
       adds a missing country code from the organization's `country_dial_code`
-- [ ] **Wash-aware scheduling.** Specified 2026-08-18, not built. Washing is done
+- [~] **Wash-aware scheduling — deferred 2026-08-18.** Specified in full below, not built. Washing is done
       by different people from the stylists, so a customer needing a wash can
       arrive *before* the stylist is free — the washer takes them while the
       stylist finishes the previous client. The salon's rule: start 5 minutes
@@ -314,6 +314,13 @@ settled, and the map link is correct.
       - **Three sinks is a capacity limit, not a pairwise clash**, so no
         exclusion constraint can express it. It needs a count inside
         `create_appointment()`, and a lock if it is to be airtight
+      - **What deferring costs, so it is a choice and not an oversight.**
+        Availability currently assumes the stylist is occupied from the moment
+        the customer arrives. So the salon keeps the ~10 minutes per changeover
+        that the wash model would have recovered, and a customer needing a wash
+        is offered the same times as one who does not. Nothing is wrong; the day
+        is simply less tightly packed than it could be. The receptionist can
+        still squeeze a wash in by phone, because staff bypass availability
 - [ ] Public booking form
       - [x] **Stage A — the picker.** Service, stylist or anyone, day, time.
             `/book`, state held in the URL so the back button works and times
