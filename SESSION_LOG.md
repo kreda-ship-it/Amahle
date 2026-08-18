@@ -18,6 +18,95 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-17 (later) — Phase 4 begins: the customer record
+
+**Built:** Migration 012 — `customers`, `customer_care_notes`, `customer_flags`.
+The first tables holding data about people who never agreed to be in a database,
+and the first place this project's standing rule ran out.
+
+That rule was "RLS hides rows, grants hide columns," and it has carried every
+table so far. It does not reach field-level permissions. A grant is granted to a
+*Postgres* role, and there are only three — `anon`, `authenticated`,
+`service_role`. Every logged-in member of staff, owner through stylist, connects
+as `authenticated`. So a column grant can say "all staff" or "no staff" and can
+never say "stylists yes, receptionists no", which is the whole of DECISIONS #9.
+
+The fix is that allergies, sensitivities and hair formula moved to their own
+table, where the question becomes a row-level policy calling `has_permission()`.
+Field-level became row-level, on machinery that already existed and was already
+tested. `customer_flags` was always going to work this way — it carries a
+`min_permission` per row so each flag names its own audience — so this makes the
+customer record one idea instead of two. Written up as DECISIONS #27, including
+the alternative not taken: one table read through a view that blanks columns.
+That gives per-*column* granularity rather than per-*group*, and was rejected for
+the machinery it drags in, not because it was wrong.
+
+`min_permission` references `permissions (key)`. A typo there would otherwise
+create a flag nobody on earth can read, owner included, and nothing would report
+it as an error.
+
+Matching is on `phone_digits`, a generated column Postgres computes as `phone`
+with every non-digit stripped. `+1 (202) 555-0143` and `+12025550143` are one
+person and two strings; the second insert is now refused by the database rather
+than by a tidy input box in a browser that an import or the SQL editor never
+sees. It deliberately does *not* invent a missing country code — that would
+hardcode one country into a multi-tenant schema.
+
+Four permission keys, and the first that Receptionist and Stylist have ever held:
+migration 003 promised theirs would arrive with customers, and they have.
+Receptionist gets financial flags and no clinical detail; Stylist gets allergies
+and no financial flags. No `anon` grants on any of the three tables — not a
+restricted list, nothing at all. The booking form will go through
+`createAppointment()`.
+
+`test-tenant-isolation.sql` extended to give the other salon a customer, an
+allergy and a flag. It needed it: before that, `customers` could have shipped
+with no policy at all and the script would still have printed a passing row. Ten
+columns now, and it passed — `1, 4, 21, 0, 0, 0, 0, 0, 0, 0`. The 21 is not a
+number that merely looks plausible; it is Owner 9 + Manager 7 + Receptionist 3 +
+Stylist 2, so the backfill did exactly what was designed and no role picked up
+anything extra. `audit-tenant-safety.sql` returned no rows.
+
+**Broke / unresolved:** The first `db push` did not reach the database, and both
+of us believed it had. `supabase migration list` showed `remote` empty for 012
+while every earlier migration had a value. Cause never established — most likely
+the confirmation prompt, or the trailing space in the folder name, which makes
+`cd ~/Documents/Salon System` land somewhere else. **Check `migration list`
+rather than trusting that a push succeeded.**
+
+The generated TypeScript types describe `phone_digits` as writable and nullable.
+Both are wrong — Postgres refuses writes to a generated column, and `phone` is
+not null. Nothing enforces this in the editor; just don't write to it.
+
+Docker still isn't installed, so `db push` warns that it failed to cache the
+migrations catalog. Harmless, and unchanged from previous sessions.
+
+`audit_log` now holds copies of allergies and hair formulas inside `changes`.
+That is correct — it is what an audit trail is for — but it means the eventual
+audit-viewing screen has a hard constraint attached: its gate must be at least as
+strict as `customer.view_sensitive` or it is the back door around every policy in
+migration 012. Noted in SCHEMA.md so it isn't discovered late.
+
+Under the approved grid a Stylist cannot write care notes, only read them. So a
+stylist recording their own hair formula after an appointment is not possible
+yet. That is a Phase 6 decision, not an oversight, but it will come up the first
+time someone tries.
+
+Permissions attach to a *role*, not to a person. The ask this session was for
+per-staff-member control — "Hanna can see financial flags, other stylists can't"
+— and that does not exist. Deliberately not smuggled into 012: it needs a
+per-profile overrides table and a rewrite of `has_permission()`, which every
+policy in the database depends on. Logged as an open question in ROADMAP.
+
+The SESSION_LOG entry for 2026-08-15 (the app half) is still missing.
+
+**Next:** `employee_working_hours` and `employee_time_off` — availability cannot
+be computed without them — then seeding the salon's real working hours, then
+`createAppointment()`. The phone normalisation helper and its organization
+setting land with the booking form.
+
+---
+
 ## 2026-08-17 — Phase 3, the first thing on screen
 
 **Built:** Generated database types, at last. `supabase gen types typescript

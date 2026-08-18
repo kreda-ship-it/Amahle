@@ -349,6 +349,36 @@ job; overruled deliberately in favour of precision.
 confusing rather than useful. If they are always granted together in practice,
 merging them is a migration and a policy edit.
 
+## 27. Field-level permissions are built as a separate table, not column grants — _2026-08-17_
+**Decision:** The sensitive customer fields — allergies, sensitivities, hair
+formula — live in `customer_care_notes`, their own table with its own RLS policy
+guarded by `customer.view_sensitive`. `customer_flags` follows the same pattern,
+carrying a `min_permission` per row. Field-level permissions are implemented as
+row-level ones.
+**Why:** Every earlier table enforced column visibility with grants — "RLS hides
+rows, grants hide columns." That tool does not reach this case. A grant is
+granted to a *Postgres* role, and every logged-in member of staff connects as the
+same one, `authenticated`. A column grant can say "all staff" or "no staff"; it
+cannot say "stylists yes, receptionists no", which is the entire requirement of
+DECISIONS #9. A separate table turns the question into one the database can
+already answer, through `has_permission()` — machinery that exists, is used by
+every other policy, and is covered by `test-tenant-isolation.sql`.
+**Alternative rejected:** Keep one `customers` table and read it through a view
+that blanks the columns you may not see (`case when has_permission(...) then
+allergies end`). It genuinely gives per-*column* granularity rather than
+per-*group*, which is closer to the literal wording of #9. Rejected because the
+base table then has to be ungranted to `authenticated`, writes need a separate
+path, and view/RLS interaction is subtle enough that the next person to touch it
+is likely to get it wrong. Consistency with `customer_flags` — always going to be
+a separate table for exactly this reason — settled it.
+**Consequence accepted:** granularity is per *group* of fields. Splitting
+allergies from hair formula later means another table, not another column. And
+the audit log now holds copies of these values, so an audit-viewing screen must
+be gated at least as tightly or it is the back door around all of this.
+**Revisit when:** A field needs an audience that matches none of the others in
+its table, and adding a third table for one column starts to look absurd. That is
+where the view earns its complexity.
+
 ---
 
 ## Template for new entries
