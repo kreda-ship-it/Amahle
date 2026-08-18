@@ -17,6 +17,8 @@ import {
 import { getOrganization } from "@/lib/site/organization";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
 
+import { BookingForm } from "./booking-form";
+
 /**
  * The booking page — choosing what, with whom, and when.
  *
@@ -283,21 +285,18 @@ export default async function BookPage({
         )}
       </section>
 
-      {chosen && selectedDay && (
+      {chosen && (
         <section className="mt-10 rounded-2xl border border-line px-6 py-5">
-          <h2 className="font-display text-xl font-semibold">Your booking</h2>
+          <h2 className="font-display text-xl font-semibold">Your details</h2>
 
-          <p className="mt-3 text-pretty">
-            <span className="font-medium">{service.name}</span> with{" "}
-            {nameFor(chosen.employeeId)} on{" "}
-            {salonDayLabelLong(salonDateKey(chosen.startsAt, org.timezone))} at{" "}
-            {salonTime(chosen.startsAt, org.timezone)}.
-          </p>
-
-          <p className="mt-4 text-sm text-ink-muted">
-            Nothing is booked yet — the form that takes your name and number is
-            the next thing being built.
-          </p>
+          <BookingForm
+            serviceId={service.id}
+            employeeId={chosen.employeeId}
+            startsAt={chosen.startsAt}
+            summary={`${service.name} with ${nameFor(chosen.employeeId)} on ${salonDayLabelLong(
+              salonDateKey(chosen.startsAt, org.timezone),
+            )} at ${salonTime(chosen.startsAt, org.timezone)}.`}
+          />
         </section>
       )}
     </Shell>

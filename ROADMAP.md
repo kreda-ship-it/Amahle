@@ -318,14 +318,22 @@ settled, and the map link is correct.
       - [x] **Stage A — the picker.** Service, stylist or anyone, day, time.
             `/book`, state held in the URL so the back button works and times
             never age in a cache
-      - [ ] **Stage B — details and submit.** Name and phone, through
-            `createAppointment()`. On a taken slot: say so, then offer the same
-            time with other stylists, which needs no new query because every
-            slot already carries its stylist
-      - [ ] **Stage C — confirmation page**, reachable by a shareable link.
-            Needs a small function returning limited details from a booking
-            reference: service, stylist, time, salon phone. Nothing about other
-            customers
+      - [x] **Stage B — details and submit**, 2026-08-18. Name and phone through
+            `createAppointment()`. Validation here covers only what a *form*
+            knows about — that the boxes are filled in; every real rule is the
+            database's, because it holds whatever calls it. On a taken slot the
+            same time with a different stylist is offered first, then the
+            nearest other times that day. No new query: every slot already
+            carries its stylist, which makes "someone else, same time" a filter
+            rather than a feature
+      - [x] **Stage C — confirmation page**, 2026-08-18, at
+            `/book/confirmed/<reference>`. The appointment's own id is the
+            reference — the customer has no account and never will, so the link
+            is the whole credential. `get_booking_confirmation()` returns no
+            customer name, phone, email or notes: the link will be forwarded,
+            so everything it returns is written to be harmless in a stranger's
+            hands. Not indexed. No cancel button — cancelling online is not in
+            v1, and a button that quietly does nothing is worse than none
       - [ ] **Stage D — several services for one customer.** "Blow dry and trim
             for her." **No buffer between them** — the buffer resets the station
             between *customers*, so a chained booking is duration + duration end
@@ -344,7 +352,7 @@ settled, and the map link is correct.
             chosen. If it is, availability for person 2 needs nothing new. If it
             is not, provisional holds have to be passed into the availability
             function and kept somewhere while the customer decides
-- [ ] Confirmation page
+- [x] **Confirmation page** — stage C above
 - [ ] Booking confirmation message
 - [x] **Audit log writes on every appointment change** — migration 014, at
       `critical` tier, by trigger rather than by application code, so a direct

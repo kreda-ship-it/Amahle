@@ -967,6 +967,17 @@ export type Database = {
           slot_starts_at: string
         }[]
       }
+      get_booking_confirmation: {
+        Args: { p_appointment_id: string }
+        Returns: {
+          employee_name: string
+          ends_at: string
+          price: number
+          service_name: string
+          starts_at: string
+          status: string
+        }[]
+      }
       has_permission: { Args: { p_key: string }; Returns: boolean }
       normalize_phone: {
         Args: { p_dial_code?: string; p_phone: string }
