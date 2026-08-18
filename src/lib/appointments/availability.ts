@@ -169,6 +169,8 @@ export async function getAvailableSlots(input: {
   fromDate: string;
   toDate?: string;
   employeeId?: string | null;
+  /** So the customer keeps seeing the slot they are holding. */
+  sessionToken?: string | null;
 }): Promise<Slot[]> {
   if (input.serviceIds.length === 0) return [];
 
@@ -180,6 +182,7 @@ export async function getAvailableSlots(input: {
     p_from_date: input.fromDate,
     p_to_date: input.toDate ?? undefined,
     p_employee_id: input.employeeId ?? undefined,
+    p_session_token: input.sessionToken ?? undefined,
   });
 
   if (error) {

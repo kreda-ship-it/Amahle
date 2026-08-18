@@ -7,6 +7,11 @@ import {
   getEmployeesForServices,
 } from "@/lib/appointments/availability";
 import { createAppointment } from "@/lib/appointments/create";
+import { holdSlot } from "@/lib/appointments/holds";
+import {
+  ensureBookingSession,
+  readBookingSession,
+} from "@/lib/appointments/session";
 import { salonDateKey, salonTime } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 
@@ -40,6 +45,54 @@ export type BookingState =
       /** Set only when the slot was taken, and possibly empty. */
       alternatives?: Alternative[];
     };
+
+/**
+ * Choosing a time — which reserves it.
+ *
+ * A button rather than a link, deliberately. Holding a slot is a write, and a
+ * write must not happen because a page was loaded: a crawler or a browser
+ * prefetch would quietly start reserving the salon's afternoon.
+ *
+ * Failures come back as a query parameter rather than as state, because the
+ * time list is rendered by a server component and a redirect is the honest way
+ * to say "that one has gone, here is the list again".
+ */
+export async function chooseTime(formData: FormData): Promise<void> {
+  const org = await getOrganization();
+
+  const serviceIds = text(formData, "serviceIds");
+  const employeeId = text(formData, "employeeId");
+  const startsAt = text(formData, "startsAt");
+  const employee = text(formData, "employee");
+  const date = text(formData, "date");
+
+  const query = new URLSearchParams();
+  if (serviceIds) query.set("services", serviceIds);
+  if (employee) query.set("employee", employee);
+  if (date) query.set("date", date);
+
+  if (!serviceIds || !employeeId || !startsAt) {
+    redirect(`/book?${query.toString()}`);
+  }
+
+  const sessionToken = await ensureBookingSession();
+
+  const held = await holdSlot({
+    orgId: org.id,
+    serviceIds: serviceIds.split(",").filter(Boolean),
+    employeeId,
+    startsAt,
+    sessionToken,
+  });
+
+  if (!held.ok) {
+    query.set("problem", held.message);
+    redirect(`/book?${query.toString()}`);
+  }
+
+  query.set("at", startsAt);
+  redirect(`/book?${query.toString()}`);
+}
 
 export async function submitBooking(
   _previous: BookingState,
@@ -82,6 +135,7 @@ export async function submitBooking(
 
   const result = await createAppointment({
     organizationId: org.id,
+    sessionToken: await readBookingSession(),
     serviceIds,
     employeeId,
     startsAt,

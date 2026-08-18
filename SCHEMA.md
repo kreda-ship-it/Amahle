@@ -567,6 +567,49 @@ difference between a customer and the person who runs the diary.
 Two optional settings in `public_settings`: `booking_lead_time_hours` (default 2,
 so nobody books ten minutes from now) and `booking_horizon_days` (default 60).
 
+## appointment_holds
+
+A slot reserved for a few minutes while somebody finishes booking it. Migration
+022.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `employee_id` | uuid | References `employees (id, org_id)` |
+| `starts_at` | timestamptz | |
+| `blocked_until` | timestamptz | Includes the buffer, same span an appointment would reserve |
+| `session_token` | text | Which browser this belongs to. Random, in a cookie. |
+| `expires_at` | timestamptz | Fifteen minutes by default; `hold_minutes` in `public_settings` |
+| `released_at` | timestamptz | Set when the hold ends — used up, replaced, or lapsed |
+
+**No `customer_id`, because there is no customer yet.** At the moment a hold is
+made we do not know their name; it arrives with the form. That is also why holds
+are not provisional appointments: an appointment appears on the calendar and is
+audited, and half-finished strangers on the calendar is how staff stop trusting
+it.
+
+**No `deleted_at` either.** `released_at` does that job and says what actually
+happened — a hold ended, rather than a record was removed. Released rows are
+kept: they cost nothing, they record how often bookings are abandoned, and
+DELETE is granted to nobody anywhere in this database.
+
+**An exclusion constraint, the same shape as the one on `appointments`.** Two
+people clicking the same time in the same instant is precisely the race this
+table exists to fix, so the guarantee is the database's rather than a check
+that can be overtaken. Its predicate cannot mention `expires_at` — `now()` is
+not immutable and Postgres will not index on it — so stale holds are released
+explicitly at the start of `hold_slot()` instead.
+
+**No grants to anyone, in any role.** The table is reached only through
+`hold_slot()`, `release_holds()` and `get_hold()`. That is what stops a browser
+holding every slot in the salon.
+
+**A hold blocks everyone except the session that made it.** Otherwise a customer
+who just picked 10:45 would reload the page and find 10:45 gone — the hold would
+hide the very slot it is protecting. Both `get_available_slots()` and
+`create_appointment()` take the session token and use `is distinct from`, which
+also gets the null case right: a caller with no token is distinct from every
+token, so every live hold counts as busy for them.
+
 ## How an appointment gets created
 
 Three functions in Postgres, added by migration 015. Together they are the only

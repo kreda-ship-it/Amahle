@@ -14,6 +14,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointment_holds: {
+        Row: {
+          blocked_until: string
+          created_at: string
+          employee_id: string
+          expires_at: string
+          id: string
+          org_id: string
+          released_at: string | null
+          session_token: string
+          starts_at: string
+        }
+        Insert: {
+          blocked_until: string
+          created_at?: string
+          employee_id: string
+          expires_at: string
+          id?: string
+          org_id: string
+          released_at?: string | null
+          session_token: string
+          starts_at: string
+        }
+        Update: {
+          blocked_until?: string
+          created_at?: string
+          employee_id?: string
+          expires_at?: string
+          id?: string
+          org_id?: string
+          released_at?: string | null
+          session_token?: string
+          starts_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_holds_employee_same_org"
+            columns: ["employee_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "appointment_holds_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointments: {
         Row: {
           blocked_until: string
@@ -918,6 +969,7 @@ export type Database = {
           p_notes?: string
           p_org_id: string
           p_service_ids: string[]
+          p_session_token?: string
           p_starts_at: string
         }
         Returns: string
@@ -963,6 +1015,7 @@ export type Database = {
           p_from_date: string
           p_org_id: string
           p_service_ids: string[]
+          p_session_token?: string
           p_to_date?: string
         }
         Returns: {
@@ -981,11 +1034,30 @@ export type Database = {
           status: string
         }[]
       }
+      get_hold: {
+        Args: { p_session_token: string }
+        Returns: {
+          employee_id: string
+          expires_at: string
+          starts_at: string
+        }[]
+      }
       has_permission: { Args: { p_key: string }; Returns: boolean }
+      hold_slot: {
+        Args: {
+          p_employee_id: string
+          p_org_id: string
+          p_service_ids: string[]
+          p_session_token: string
+          p_starts_at: string
+        }
+        Returns: string
+      }
       normalize_phone: {
         Args: { p_dial_code?: string; p_phone: string }
         Returns: string
       }
+      release_holds: { Args: { p_session_token?: string }; Returns: undefined }
       round_up_to_minutes: {
         Args: { p_minutes: number; p_ts: string }
         Returns: string

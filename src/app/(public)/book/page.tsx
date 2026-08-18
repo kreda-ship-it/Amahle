@@ -8,6 +8,8 @@ import {
   getEmployeesForServices,
   type BookableService,
 } from "@/lib/appointments/availability";
+import { getHold } from "@/lib/appointments/holds";
+import { readBookingSession } from "@/lib/appointments/session";
 import {
   salonDateKey,
   salonDayLabel,
@@ -18,6 +20,7 @@ import {
 import { getOrganization } from "@/lib/site/organization";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
 
+import { chooseTime } from "./actions";
 import { BookingForm } from "./booking-form";
 
 /**
@@ -59,6 +62,8 @@ type SearchParams = {
   date?: string;
   at?: string;
   add?: string;
+  /** A message from the hold attempt — "someone else is booking that time". */
+  problem?: string;
 };
 
 export default async function BookPage({
@@ -90,6 +95,7 @@ export default async function BookPage({
   const serviceIds = chosenServices.map((service) => service.id);
   const employees = await getEmployeesForServices(org.id, serviceIds);
   const days = salonDaysFrom(org.timezone, DAYS_SHOWN);
+  const sessionToken = await readBookingSession();
 
   // One call for the whole fortnight. The day chooser has to know which days
   // have anything before you pick one, and fourteen separate questions would
@@ -100,6 +106,7 @@ export default async function BookPage({
     fromDate: days[0],
     toDate: days[days.length - 1],
     employeeId: params.employee ?? null,
+    sessionToken,
   });
 
   const byDay = new Map<string, typeof slots>();
@@ -121,9 +128,16 @@ export default async function BookPage({
   const nameFor = (id: string) =>
     employees.find((employee) => employee.id === id)?.full_name ?? "our team";
 
-  const chosen = params.at
-    ? (slots.find((slot) => slot.startsAt === params.at) ?? null)
-    : null;
+  /*
+   * The hold is the source of truth for what has been chosen, not the URL.
+   * A customer who left the tab open over lunch has an `at` parameter and no
+   * hold, and must be told so rather than shown a form that will fail.
+   */
+  const hold =
+    params.at && sessionToken ? await getHold(sessionToken) : null;
+
+  const chosen = hold && hold.startsAt === params.at ? hold : null;
+  const holdLapsed = Boolean(params.at) && chosen === null;
 
   const totalMinutes = chosenServices.reduce(
     (sum, service) => sum + service.duration_minutes,
@@ -151,6 +165,16 @@ export default async function BookPage({
       <h1 className="font-display text-3xl font-semibold sm:text-4xl">
         Book an appointment
       </h1>
+
+      {(params.problem || holdLapsed) && (
+        <p
+          role="alert"
+          className="mt-6 rounded-xl border border-brand/40 bg-brand/5 px-5 py-4 text-pretty"
+        >
+          {params.problem ??
+            "Your time was held for a few minutes and has now been released. Please choose again."}
+        </p>
+      )}
 
       {/* What they are having. */}
       <section className="mt-8 rounded-2xl bg-surface-sunk px-6 py-5">
@@ -290,22 +314,54 @@ export default async function BookPage({
               </p>
             ) : (
               <div className="mt-4 flex flex-wrap gap-2">
+                {/*
+                  A form, not a link. Choosing a time RESERVES it, and a write
+                  must not happen because a page was loaded — a crawler or a
+                  browser prefetch would quietly start holding the salon's
+                  afternoon.
+                */}
                 {times.map((slot) => (
-                  <Chip
+                  <form
                     key={`${slot.startsAt}-${slot.employeeId}`}
-                    href={href({ at: slot.startsAt })}
-                    active={params.at === slot.startsAt}
+                    action={chooseTime}
                   >
-                    <span className="font-medium">
-                      {salonTime(slot.startsAt, org.timezone)}
-                    </span>
+                    <input
+                      type="hidden"
+                      name="serviceIds"
+                      value={serviceIds.join(",")}
+                    />
+                    <input
+                      type="hidden"
+                      name="employeeId"
+                      value={slot.employeeId}
+                    />
+                    <input type="hidden" name="startsAt" value={slot.startsAt} />
+                    <input
+                      type="hidden"
+                      name="employee"
+                      value={params.employee ?? ""}
+                    />
+                    <input type="hidden" name="date" value={selectedDay ?? ""} />
 
-                    {!params.employee && (
-                      <span className="ml-2 text-ink-muted">
-                        {nameFor(slot.employeeId)}
+                    <button
+                      type="submit"
+                      className={
+                        params.at === slot.startsAt
+                          ? "rounded-full border border-brand bg-brand px-4 py-2 text-sm text-white"
+                          : "rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
+                      }
+                    >
+                      <span className="font-medium">
+                        {salonTime(slot.startsAt, org.timezone)}
                       </span>
-                    )}
-                  </Chip>
+
+                      {!params.employee && (
+                        <span className="ml-2 text-ink-muted">
+                          {nameFor(slot.employeeId)}
+                        </span>
+                      )}
+                    </button>
+                  </form>
                 ))}
               </div>
             )}
@@ -335,6 +391,16 @@ export default async function BookPage({
       {chosen && (
         <section className="mt-10 rounded-2xl border border-line px-6 py-5">
           <h2 className="font-display text-xl font-semibold">Your details</h2>
+
+          {/*
+            Said plainly rather than counted down. A ticking clock on a form
+            makes people rush and mistype; a time they can read tells them the
+            same thing without the pressure.
+          */}
+          <p className="mt-2 text-sm text-ink-muted">
+            This time is held for you until{" "}
+            {salonTime(chosen.expiresAt, org.timezone)}.
+          </p>
 
           <BookingForm
             serviceIds={serviceIds.join(",")}

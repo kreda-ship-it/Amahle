@@ -48,6 +48,12 @@ export type CreateAppointmentInput = {
 
   /** Anything the customer or the receptionist wants recorded. */
   notes?: string | null;
+
+  /**
+   * The booking session. Their own hold is honoured rather than blocking
+   * them, and it is released once the appointment exists.
+   */
+  sessionToken?: string | null;
 };
 
 /**
@@ -113,6 +119,7 @@ export async function createAppointment(
     p_customer_phone: input.customerPhone,
     p_customer_email: input.customerEmail ?? undefined,
     p_notes: input.notes ?? undefined,
+    p_session_token: input.sessionToken ?? undefined,
   });
 
   if (error) {

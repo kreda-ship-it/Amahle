@@ -348,6 +348,13 @@ settled, and the map link is correct.
             wrong adds dead minutes to every combined booking. Needs
             availability to take a list of services, atomic creation of one row
             per service, and a group tying them into one visit
+      - [x] **Holds**, migrations 022 and 023, 2026-08-19. A slot is reserved
+            for fifteen minutes between choosing a time and confirming it, so
+            the second customer never sees it rather than being refused at the
+            end. Choosing a different time releases the previous hold at once.
+            Picking a time is a form rather than a link, because holding is a
+            write and a write must not happen because a page was loaded — a
+            crawler or a prefetch would start reserving the afternoon
       - [ ] **Stage E — more than one person.** Specified 2026-08-18. Ask how
             many people up front, then take each person in turn: service,
             stylist, day, time — "like two different people booking". No
@@ -355,10 +362,9 @@ settled, and the map link is correct.
             same calculation run twice. Once person 1 holds 10:45 with Hanna,
             person 2's times at 10:45 with anyone else are shown first, labelled
             as matching.
-            **Open:** whether person 1's appointment is real before person 2 is
-            chosen. If it is, availability for person 2 needs nothing new. If it
-            is not, provisional holds have to be passed into the availability
-            function and kept somewhere while the customer decides
+            **Answered 2026-08-19:** person 1's slot is *held*, not booked —
+            the holds built in migrations 022 and 023 are exactly the mechanism
+            this needed
 - [x] **Confirmation page** — stage C above
 - [~] **Booking confirmation message — deferred 2026-08-18.** No automated
       message in v1. The confirmation page at `/book/confirmed/<reference>` is
