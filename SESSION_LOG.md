@@ -18,6 +18,115 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-20 — Audit the booking flow, then fix what it found
+
+**Built:** An audit of every public page and the whole booking path, read
+against how the established salon platforms build the same thing. Eight
+findings. Then the two that mattered, plus two screens' worth of flow.
+
+**Migration 026 — the rota became a rule.** `get_available_slots()` was the only
+function in the database that read `employee_working_hours` or
+`employee_time_off`. `hold_slot()` and `create_appointment()` never did: they
+checked the services, the employee and the overlap against existing
+appointments, then accepted whatever `starts_at` they were handed. The booking
+form posts that time as a hidden field, so a request carrying a time the picker
+never offered was held and booked — three in the morning, a closed Sunday, or
+the middle of a stylist's booked holiday. Time off is not an appointment, so the
+exclusion constraint never saw it either. Nothing at all refused that row.
+
+The fix that suggests itself is to check the time appears in the list
+availability offered, and it is wrong. Migration 018 deliberately stopped
+offering times on a grid — each free stretch starts its own sequence from
+wherever the previous appointment ended — so the offered list changes shape as
+bookings arrive. A customer holding 10:45 while somebody else books 09:00–10:30
+would find 10:45 gone from the list, not because it was taken but because the
+stretch it is measured from now begins elsewhere. Membership would refuse a
+booking that is valid and held.
+
+The rota did not move, so `schedule_permits()` asks the rota: working hours,
+time off, lead time, horizon. What makes it safe is that availability can only
+ever offer times already satisfying all four, so it permits a superset of what
+is offered and can never refuse something a customer was shown.
+`test-availability.sql` check 9 asserts that relationship directly rather than
+trusting it — which is what lets the offering rules change freely afterwards.
+DECISIONS #30.
+
+**The alternatives offered when a slot is taken.** `findAlternatives()` computed
+and ranked them well and none of it reached anybody: the links carried
+`services` and `at`, which nothing reads, and no `party`, so `clampParty()`
+returned null and the customer landed back on "how many people are coming?" —
+losing every choice, at the moment they were most likely to give up. They are
+forms posting to `chooseTime` now, so one tap holds the new slot. That moved the
+error block above the booking form, because a form cannot contain a form.
+
+**Two screens of flow.** `/book` no longer opens by asking how many people are
+coming; one is the default and the party screen sits behind a link. And the flat
+list of twenty-four services is grouped by category, with the categories as a
+filter rather than a step — a separate screen charges a tap to everybody,
+including the man who wants a haircut and can already see it.
+
+**Written down:** DECISIONS #30 (above) and #31 (the buffer is dropped only when
+nothing follows it — the arithmetic does not work below 30 minutes, and above it
+the buffer is sweeping hair off the floor rather than slack in the schedule).
+Plus a ROADMAP section holding five designed-not-built changes to how times are
+offered, the segmented-services generalisation on the wash-aware note, no-show
+marking pulled into Phase 5's first version, and two new open questions.
+
+**Broke / unresolved:**
+
+**Two false alarms, both worth remembering.** The first test run reported that
+nothing refused a 3am booking — correctly, because the migration had been
+written but never pushed. `supabase migration list` showed it local with an
+empty remote, which is the query to reach for first next time. The second was
+`test-availability.sql` failing six of eight checks: it picks one employee,
+inserts working hours for that employee, then asks `get_available_slots` for the
+whole salon. Fine when written, because nobody else had a rota. Broken since
+2026-08-18, when `seed-working-hours.sql` gave every bookable employee the
+salon's full opening hours, so three or four stylists now answer every query and
+every count is multiplied. Scoped to one stylist and fixed. **Neither was a
+fault in the booking code, and roughly half this session went into establishing
+that.**
+
+**iCloud is syncing the project.** The build failed once on `routes.d 2.ts` and
+two siblings — conflict copies inside `.next`, because `~/Documents` syncs by
+default. Deleted, and the build passed. It will recur, and it produces errors
+that look like broken code. The project wants to live outside `~/Documents`.
+
+**The braiding catalogue is designed and nowhere on disk.** Category → (with
+extensions?) → style → size → length → colour, with price and duration
+accumulating. Two new tables (`service_option_groups`, `service_options`), one
+new column (`services.extensions`), a snapshot table (`appointment_options`)
+copying the chosen options onto the appointment the way `price` already is, and
+three functions taking an option list so duration is computed in the database
+rather than passed in. `schedule_permits()` needs no change, which is the
+DECISIONS #30 shape paying off early. Three migrations, 027–029. **Not
+approved, not written, and it exists only in the conversation** — the largest
+loose thread here.
+
+Two smaller ones: the length list was proposed and never corrected (bob,
+shoulder, bra-strap, mid-back, waist, hip, knee), and whether the receptionist
+gets `service.manage` is still open — the conversation assumed they can edit
+durations and the database does not allow it, and the same key also controls
+prices.
+
+**Also noticed, not fixed:** the services page has no Book button. A customer
+reading the price list, deciding on a wash and blow dry, has to go and find the
+booking page. The only route into booking on the whole site is the nav link.
+
+**Next:** The day view. Phase 5, and the thing with a deadline attached — a
+customer can book tonight and nobody at the salon can see it, because there is
+no calendar and no manual entry. Build the day view first and let the staff
+shell fall out of it rather than framing an area before there is anything to put
+in it; manual entry immediately after. Check who holds `appointment.view_all`
+before starting, because the day view's first real question is whose
+appointments you are allowed to see.
+
+The braiding catalogue after that, not before. It is probably the highest-value
+feature in the product for this salon, and it is a lot of machinery to build in
+front of a calendar that does not exist.
+
+---
+
 ## 2026-08-17 (later) — Phase 4 begins: the customer record
 
 **Built:** Migration 012 — `customers`, `customer_care_notes`, `customer_flags`.
