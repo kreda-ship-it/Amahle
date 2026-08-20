@@ -11,7 +11,17 @@
 -- is recorded as source = 'online' — which is exactly the path worth
 -- testing, because it is the one that cannot use ordinary privileges.
 --
--- Expected: seven rows, every outcome starting PASS.
+-- Every booking below is made at a time taken from the REAL ROTA.
+-- It used to be a flat `now() + 30 days` — an arbitrary instant, at
+-- whatever time of day the test happened to run, on whatever weekday
+-- that landed on. Migration 026 refuses arbitrary instants, and it is
+-- right to.
+--
+-- Checks 8 to 10 arrived with that migration. Each sends a time the
+-- picker would never offer, the way an edited hidden form field would,
+-- and each must be refused.
+--
+-- Expected: ten rows, every outcome starting PASS.
 
 begin;
 
@@ -23,7 +33,10 @@ declare
   v_service_id  uuid;
   v_employee_id uuid;
   v_offline_id  uuid;
-  v_when        timestamptz := now() + interval '30 days';
+  v_when        timestamptz;
+  v_times       timestamptz[];
+  v_offday      date;
+  v_tz          text;
   v_first       uuid;
   v_second      uuid;
   v_customer_a  uuid;
@@ -38,7 +51,7 @@ declare
   v_chain       uuid;
   v_rows        int;
 begin
-  select o.id into v_org_id
+  select o.id, o.timezone into v_org_id, v_tz
   from public.organizations o
   where o.slug = 'kedus-hair-salon' and o.deleted_at is null;
 
@@ -57,6 +70,7 @@ begin
     and es.deleted_at is null
     and s.deleted_at is null and s.is_active and s.is_bookable_online
     and e.deleted_at is null and e.is_active and e.is_bookable
+  order by s.duration_minutes
   limit 1;
 
   if v_employee_id is null then
@@ -64,6 +78,33 @@ begin
       ('setup', 'FAIL — no bookable employee/service pair. Check employee_services.');
     return;
   end if;
+
+  -- Four times the rota actually permits, about a month out: the start
+  -- of the first working window on each of the next four working days.
+  select array_agg(t order by t) into v_times
+  from (
+    select distinct on (d::date)
+           (d::date + wh.start_time) at time zone v_tz as t
+    from generate_series(
+      (now() at time zone v_tz)::date + 30,
+      (now() at time zone v_tz)::date + 44,
+      interval '1 day') as d
+    join public.employee_working_hours wh
+      on  wh.employee_id = v_employee_id
+      and wh.org_id      = v_org_id
+      and wh.deleted_at  is null
+      and wh.day_of_week = extract(dow from d::date)::int
+    order by d::date, wh.start_time
+    limit 4
+  ) s;
+
+  if v_times is null or array_length(v_times, 1) < 4 then
+    insert into results values ('setup',
+      'FAIL — fewer than four working days in a fortnight. Check employee_working_hours.');
+    return;
+  end if;
+
+  v_when := v_times[1];
 
   -- ---------------------------------------------------------------
   -- 1. A booking is created, and the trigger fills what was omitted.
@@ -128,7 +169,7 @@ begin
     p_org_id         => v_org_id,
     p_service_ids    => array[v_service_id],
     p_employee_id    => v_employee_id,
-    p_starts_at      => v_when + interval '1 day',
+    p_starts_at      => v_times[2],
     p_customer_name  => 'Test Customer Typed Differently',
     p_customer_phone => '+1 202-555-0143'
   );
@@ -155,6 +196,7 @@ begin
     and es.deleted_at is null
     and s.deleted_at is null and s.is_active and s.is_bookable_online
     and s.id <> v_service_id
+  order by s.duration_minutes
   limit 1;
 
   if v_second_service is null then
@@ -167,7 +209,7 @@ begin
       p_org_id         => v_org_id,
       p_service_ids    => array[v_service_id, v_second_service],
       p_employee_id    => v_employee_id,
-      p_starts_at      => v_when + interval '3 days',
+      p_starts_at      => v_times[3],
       p_customer_name  => 'Chain Test',
       p_customer_phone => '202 555 0166');
 
@@ -192,6 +234,88 @@ begin
         limit 1
       ) then 'PASS' else 'FAIL — a gap appeared between two services' end);
   end if;
+
+  -- ---------------------------------------------------------------
+  -- 8-10. The rota is a rule, not a display. Migration 026.
+  --
+  -- Before it, all three of these were accepted: the booking form
+  -- posts starts_at as a hidden field, and nothing on the write path
+  -- ever consulted employee_working_hours or employee_time_off.
+  -- ---------------------------------------------------------------
+  begin
+    perform public.create_appointment(
+      p_org_id         => v_org_id,
+      p_service_ids    => array[v_service_id],
+      p_employee_id    => v_employee_id,
+      p_starts_at      => v_times[1] - interval '1 hour',
+      p_customer_name  => 'Too Early',
+      p_customer_phone => '202 555 0122');
+
+    insert into results values
+      ('8. an hour before opening refused', 'FAIL — booked outside working hours');
+  exception
+    when raise_exception then
+      insert into results values ('8. an hour before opening refused', 'PASS');
+  end;
+
+  -- A weekday this employee has no working hours row for at all.
+  select d::date into v_offday
+  from generate_series(
+    (now() at time zone v_tz)::date + 30,
+    (now() at time zone v_tz)::date + 44,
+    interval '1 day') as d
+  where not exists (
+    select 1
+    from public.employee_working_hours wh
+    where wh.employee_id = v_employee_id
+      and wh.org_id      = v_org_id
+      and wh.deleted_at  is null
+      and wh.day_of_week = extract(dow from d::date)::int)
+  limit 1;
+
+  if v_offday is null then
+    insert into results values
+      ('9. a non-working day refused', 'SKIPPED — this employee works every day');
+  else
+    begin
+      perform public.create_appointment(
+        p_org_id         => v_org_id,
+        p_service_ids    => array[v_service_id],
+        p_employee_id    => v_employee_id,
+        p_starts_at      => (v_offday + time '12:00') at time zone v_tz,
+        p_customer_name  => 'Day Off',
+        p_customer_phone => '202 555 0133');
+
+      insert into results values
+        ('9. a non-working day refused', 'FAIL — booked on a day with no rota');
+    exception
+      when raise_exception then
+        insert into results values ('9. a non-working day refused', 'PASS');
+    end;
+  end if;
+
+  -- Time off is not an appointment, so the exclusion constraint never
+  -- saw it. This is the one that was refused by nothing at all.
+  insert into public.employee_time_off (org_id, employee_id, starts_at, ends_at)
+  values (v_org_id, v_employee_id,
+          v_times[4] - interval '1 hour',
+          v_times[4] + interval '8 hours');
+
+  begin
+    perform public.create_appointment(
+      p_org_id         => v_org_id,
+      p_service_ids    => array[v_service_id],
+      p_employee_id    => v_employee_id,
+      p_starts_at      => v_times[4],
+      p_customer_name  => 'On Holiday',
+      p_customer_phone => '202 555 0144');
+
+    insert into results values
+      ('10. booked time off refused', 'FAIL — booked during a holiday');
+  exception
+    when raise_exception then
+      insert into results values ('10. booked time off refused', 'PASS');
+  end;
 
 exception
   when others then
