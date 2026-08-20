@@ -59,6 +59,9 @@ export const dynamic = "force-dynamic";
 const DAYS_SHOWN = 14;
 const MAX_PARTY = 4;
 
+/** `?party=ask` — the only way back to the "how many people?" screen. */
+const ASK = "ask";
+
 type SearchParams = Record<string, string | undefined>;
 
 export default async function BookPage({
@@ -69,9 +72,21 @@ export default async function BookPage({
   const org = await getOrganization();
   const params = await searchParams;
 
-  const party = clampParty(params.party);
+  /*
+   * A party of one unless somebody says otherwise.
+   *
+   * This used to ask "how many people are coming?" before showing a
+   * single service — a decision most customers do not have, placed before
+   * the first thing of any value to them. Every extra decision ahead of
+   * the value is where a booking flow leaks.
+   *
+   * The screen still exists and everything behind it is unchanged; it is
+   * now reached deliberately, from a link on the service list, by the
+   * people who actually need it.
+   */
+  if (params.party === ASK) return <ChooseParty />;
 
-  if (!party) return <ChooseParty />;
+  const party = clampParty(params.party) ?? 1;
 
   const person = Math.min(Math.max(Number(params.p ?? "0") || 0, 0), party - 1);
   const requested = splitIds(params[`s${person}`]);
@@ -555,11 +570,48 @@ async function ChooseService({
   const adding = already.length > 0;
   const chosenIds = already.map((service) => service.id);
 
+  /*
+   * Grouped by category, because a flat list of twenty-four mixes a
+   * thirty-minute men's haircut in with a five-hour cornrow job and asks
+   * the customer to scan all of it. The services page has grouped this
+   * way from the start; the picker had not caught up.
+   *
+   * A Map keeps the salon's own `display_order` — insertion order is the
+   * category order, and each list stays in the order the query returned.
+   */
+  const byCategory = new Map<string, typeof services>();
+
+  for (const service of services) {
+    const category = service.category ?? "More";
+    const existing = byCategory.get(category);
+
+    if (existing) existing.push(service);
+    else byCategory.set(category, [service]);
+  }
+
+  const categories = [...byCategory.keys()];
+
+  /*
+   * A filter rather than a step. Narrowing is the right instinct — it is
+   * what the best booking flows all do — but making it a separate screen
+   * costs a tap to everybody, including the man who wants a haircut and
+   * can already see it. The headings do the narrowing; the chips are for
+   * jumping straight to braiding without scrolling past everything else.
+   */
+  const chosenCategory =
+    params.cat && byCategory.has(params.cat) ? params.cat : null;
+
+  const showing = chosenCategory ? [chosenCategory] : categories;
+
   const to = (ids: string[]) => {
     const query = new URLSearchParams();
 
     for (const [key, value] of Object.entries(params)) {
-      if (value && key !== "add" && key !== "problem") query.set(key, value);
+      // `cat` is where you looked, not what you chose. It has no business
+      // following the customer through to the day and time.
+      if (value && key !== "add" && key !== "problem" && key !== "cat") {
+        query.set(key, value);
+      }
     }
 
     query.set("party", String(party));
@@ -583,49 +635,86 @@ async function ChooseService({
             : "Choose a service to see when we are free."}
       </p>
 
+      {!adding && party === 1 && (
+        <p className="mt-3">
+          <Link
+            href={`/book?party=${ASK}`}
+            className="text-sm font-medium text-brand hover:underline"
+          >
+            Booking for more than one person?
+          </Link>
+        </p>
+      )}
+
+      {categories.length > 1 && (
+        <div className="mt-8 flex flex-wrap gap-2">
+          <Chip href={filtered(params, null)} active={!chosenCategory}>
+            Everything
+          </Chip>
+
+          {categories.map((category) => (
+            <Chip
+              key={category}
+              href={filtered(params, category)}
+              active={chosenCategory === category}
+            >
+              {category}
+            </Chip>
+          ))}
+        </div>
+      )}
+
       {services.length === 0 ? (
         <p className="mt-10 text-ink-muted">
           Online booking is briefly unavailable. Please call us.
         </p>
       ) : (
-        <ul className="mt-10 divide-y divide-line border-t border-line">
-          {services.map((service) => {
-            const price = formatPrice(
-              service.price,
-              service.price_display,
-              currency,
-            );
+        showing.map((category) => (
+          <section key={category} className="mt-10">
+            {!chosenCategory && categories.length > 1 && (
+              <h2 className="font-display text-xl font-semibold">{category}</h2>
+            )}
 
-            return (
-              <li key={service.id}>
-                <Link
-                  href={to([...chosenIds, service.id])}
-                  className="flex flex-wrap justify-between gap-x-6 gap-y-2 py-5 transition-colors hover:text-brand"
-                >
-                  <div className="min-w-56 flex-1">
-                    <h2 className="font-medium">{service.name}</h2>
+            <ul className="mt-4 divide-y divide-line border-t border-line">
+              {(byCategory.get(category) ?? []).map((service) => {
+                const price = formatPrice(
+                  service.price,
+                  service.price_display,
+                  currency,
+                );
 
-                    {service.description && (
-                      <p className="mt-1 text-sm text-ink-muted text-pretty">
-                        {service.description}
-                      </p>
-                    )}
-                  </div>
+                return (
+                  <li key={service.id}>
+                    <Link
+                      href={to([...chosenIds, service.id])}
+                      className="flex flex-wrap justify-between gap-x-6 gap-y-2 py-5 transition-colors hover:text-brand"
+                    >
+                      <div className="min-w-56 flex-1">
+                        <h3 className="font-medium">{service.name}</h3>
 
-                  <div className="text-right">
-                    <p className="font-medium whitespace-nowrap">
-                      {price ?? "Call for a price"}
-                    </p>
+                        {service.description && (
+                          <p className="mt-1 text-sm text-ink-muted text-pretty">
+                            {service.description}
+                          </p>
+                        )}
+                      </div>
 
-                    <p className="mt-1 text-sm text-ink-muted whitespace-nowrap">
-                      {formatDuration(service.duration_minutes)}
-                    </p>
-                  </div>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+                      <div className="text-right">
+                        <p className="font-medium whitespace-nowrap">
+                          {price ?? "Call for a price"}
+                        </p>
+
+                        <p className="mt-1 text-sm text-ink-muted whitespace-nowrap">
+                          {formatDuration(service.duration_minutes)}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))
       )}
 
       {adding && (
@@ -651,6 +740,20 @@ async function ChooseService({
       </p>
     </Shell>
   );
+}
+
+/** The same page, looking at one category — or at all of them. */
+function filtered(params: SearchParams, category: string | null): string {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value && key !== "problem" && key !== "cat") query.set(key, value);
+  }
+
+  if (params.add) query.set("add", params.add);
+  if (category) query.set("cat", category);
+
+  return `/book?${query.toString()}`;
 }
 
 function clampParty(value: string | undefined): number | null {
