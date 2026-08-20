@@ -8,6 +8,18 @@
 -- employee works 09:00-17:00, with the salon's default 105 minute step
 -- and 5 minute rounding.
 --
+-- SCOPED TO ONE EMPLOYEE, and it has to be. seed-working-hours.sql gives
+-- every bookable employee the salon's full opening hours, so three or
+-- four stylists are free at 09:00 on any given day and all of them do
+-- this service. Asking get_available_slots for the whole salon returns
+-- one row per stylist per time, and every count below would be
+-- multiplied by however many people happen to be rostered.
+--
+-- The seeded rows for this employee are soft-deleted too. Left in place
+-- they union with the window inserted below, and a weekday quietly
+-- stretches to 19:00 — which is a different day from the one these
+-- checks describe.
+--
 -- An empty day therefore offers five times:
 --
 --   09:00  10:45  12:30  14:15  16:00
@@ -16,7 +28,15 @@
 -- buffer may overhang closing time, and nothing is harmed by cleaning
 -- up after the last customer has gone.
 --
--- Expected: eight rows, every outcome starting PASS.
+-- Check 9 is different in kind from the rest. It does not test a
+-- number; it tests that two functions still agree. Migration 026 put
+-- the rota on the write path as schedule_permits(), and the whole
+-- design rests on availability offering a SUBSET of what that permits.
+-- If they ever drift, customers get refused times they were just
+-- shown — so this asserts the relationship directly, and will keep
+-- asserting it when the offering rules change.
+--
+-- Expected: nine rows, every outcome starting PASS.
 
 begin;
 
@@ -34,6 +54,7 @@ declare
   v_second      timestamptz;
   v_target      timestamptz;
   v_appt        uuid;
+  v_bad         int;
 begin
   select o.id, o.timezone into v_org_id, v_tz
   from public.organizations o
@@ -72,6 +93,16 @@ begin
         || '{"slot_step_minutes": 105, "slot_rounding_minutes": 5}'::jsonb
   where id = v_org_id;
 
+  -- The seed already gave this employee a window on both test days.
+  -- Rolled back with everything else here.
+  update public.employee_working_hours
+  set deleted_at = now()
+  where org_id      = v_org_id
+    and employee_id = v_employee_id
+    and deleted_at  is null
+    and day_of_week in (extract(dow from v_day)::int,
+                        extract(dow from v_day + 1)::int);
+
   insert into public.employee_working_hours
     (org_id, employee_id, day_of_week, start_time, end_time)
   values
@@ -83,7 +114,7 @@ begin
   -- 1-4. An empty day.
   -- ---------------------------------------------------------------
   select count(*) into v_count
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day);
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id);
 
   insert into results values (
     '1. five slots on an empty 09:00-17:00 day',
@@ -91,11 +122,11 @@ begin
          else format('FAIL — got %s slots, expected 5', v_count) end);
 
   select slot_starts_at into v_first
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day)
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id)
   order by slot_starts_at limit 1;
 
   select slot_starts_at into v_second
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day)
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id)
   order by slot_starts_at offset 1 limit 1;
 
   insert into results values (
@@ -112,7 +143,7 @@ begin
     '4. last slot is 16:00 — service finishes by close, buffer may overhang',
     case when (
       select (max(slot_starts_at) at time zone v_tz)::time
-      from public.get_available_slots(v_org_id, array[v_service_id], v_day)
+      from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id)
     ) = '16:00' then 'PASS' else 'FAIL — wrong last slot' end);
 
   -- ---------------------------------------------------------------
@@ -124,7 +155,7 @@ begin
   --      the appointment that just ended, not on any grid.
   -- ---------------------------------------------------------------
   select slot_starts_at into v_target
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day)
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id)
   order by slot_starts_at offset 2 limit 1;
 
   v_appt := public.create_appointment(
@@ -136,7 +167,7 @@ begin
     p_customer_phone => '(202) 555-0177');
 
   select count(*) into v_count
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day);
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id);
 
   insert into results values (
     '5. booking splits the day, four slots remain, live',
@@ -146,7 +177,7 @@ begin
   insert into results values (
     '6. a slot appears tight against the booking (13:45, not a grid line)',
     case when exists (
-      select 1 from public.get_available_slots(v_org_id, array[v_service_id], v_day)
+      select 1 from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id)
       where (slot_starts_at at time zone v_tz)::time = '13:45'
     ) then 'PASS' else 'FAIL — no slot anchored to the end of the appointment' end);
 
@@ -161,7 +192,7 @@ begin
           (v_day + time '15:00') at time zone v_tz);
 
   select count(*) into v_count
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day);
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id);
 
   insert into results values (
     '7. time off merges with the booking into one blocked stretch',
@@ -180,7 +211,7 @@ begin
   where id = v_org_id;
 
   select slot_starts_at into v_target
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day + 1)
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day + 1, p_employee_id => v_employee_id)
   order by slot_starts_at limit 1;
 
   perform public.create_appointment(
@@ -192,7 +223,7 @@ begin
     p_customer_phone => '(202) 555-0188');
 
   select slot_starts_at into v_first
-  from public.get_available_slots(v_org_id, array[v_service_id], v_day + 1)
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day + 1, p_employee_id => v_employee_id)
   order by slot_starts_at limit 1;
 
   insert into results values (
@@ -200,6 +231,24 @@ begin
     case when (v_first at time zone v_tz)::time = '10:30' then 'PASS'
          else format('FAIL — next slot was %s, expected 10:30',
                      (v_first at time zone v_tz)::time) end);
+
+  -- ---------------------------------------------------------------
+  -- 9. Everything offered is something the write path will accept.
+  --
+  -- Not a number to memorise — a relationship. Change the step, add a
+  -- clock-aligned grid, put a 20 minute service on the menu: this
+  -- check keeps holding, or tells you the moment it stops.
+  -- ---------------------------------------------------------------
+  select count(*) into v_bad
+  from public.get_available_slots(v_org_id, array[v_service_id], v_day, p_employee_id => v_employee_id) g
+  join public.services s on s.id = v_service_id
+  where not public.schedule_permits(
+          v_org_id, g.slot_employee_id, g.slot_starts_at, s.duration_minutes);
+
+  insert into results values (
+    '9. every offered slot is one the write path accepts',
+    case when v_bad = 0 then 'PASS'
+         else format('FAIL — %s offered slots would be refused on booking', v_bad) end);
 
 exception
   when others then
