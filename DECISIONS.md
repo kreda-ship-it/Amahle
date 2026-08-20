@@ -426,6 +426,103 @@ one by hand is a chore, or no-shows become a measured problem that reminders
 would address. Start the 10DLC registration before writing any code — it waits
 on someone else's queue and nothing we build shortens it.
 
+## 30. The rota is enforced on the write path, as a predicate rather than a re-run of availability — _2026-08-20_
+**Decision:** `schedule_permits(org, employee, starts_at, minutes)` answers four
+questions — is this person working then, are they away, is it too soon, is it
+too far out — and both `hold_slot()` and `create_appointment()` ask it before
+writing anything. Online bookings only; staff bypass it. It is granted to
+nobody, and is reachable only from inside the two `security definer` functions
+that call it.
+**Why:** Until migration 026, `get_available_slots()` was the only function in
+the database that read `employee_working_hours` or `employee_time_off`. The
+booking form posts `starts_at` as a hidden field, so a request carrying a time
+the picker never offered was held and booked: three in the morning, a Sunday the
+salon is shut, or the middle of a stylist's booked holiday. Time off is not an
+appointment, so the exclusion constraint never saw it either — nothing at all
+refused that row.
+
+The obvious fix is to check the time appears in the list availability offered,
+and it is wrong. Migration 018 deliberately stopped offering times on a grid:
+each free stretch starts its own sequence from wherever the previous appointment
+ended, which is what packs the day. So the offered list changes shape as
+bookings arrive. A customer holding 10:45 while somebody else books 09:00–10:30
+would find 10:45 had vanished from the list — not because it was taken, but
+because the stretch it is measured from now begins somewhere else. Membership
+would refuse a booking that is perfectly valid and held.
+
+The rota did not move. So the check asks the rota.
+
+The property that makes this safe is that availability can only ever offer times
+which already satisfy all four rules. `schedule_permits()` therefore permits a
+**superset** of what is offered, and can never refuse something a customer was
+legitimately shown. That relationship is the design, and `test-availability.sql`
+check 9 asserts it directly rather than trusting it — which is what lets the
+offering rules change freely afterwards. A clock-aligned grid, a different step,
+a twenty-minute service on the menu: none of them touch this function, and the
+test says so the moment one of them would.
+
+Two smaller choices inside it. It takes **minutes rather than service ids**,
+because `appointment_fill_from_service()` deliberately supports an explicit
+override — "this customer's colour always takes an extra hour" — and a check
+that looked the service up itself could not test an appointment whose length was
+set by hand. Phase 5's calendar is exactly where those appear. And it is
+**granted to nobody**: a `security definer` function runs as its owner and so
+does everything it calls, so the two booking functions reach it while `anon`
+cannot. Granting it would hand the public a way to map the staff rota one yes/no
+at a time, which is precisely what migration 013 revoked those tables to prevent.
+**Alternative rejected:** Checking membership in `get_available_slots()`, for the
+reason above. Also rejected: copying the four rules into each of the two callers
+— two copies to keep in step, and no test that would notice them drifting. Also
+considered and rejected: having `get_available_slots()` call `schedule_permits()`
+per candidate so the rules live in exactly one place. That is three queries per
+candidate row across hundreds of candidates, where availability currently
+narrows the whole date range in bulk. The duplication is real, but it is between
+a bulk filter and a single-row check, and check 9 is what keeps them honest.
+**Revisit when:** The buffer stops being a simple trailing pad. Wash-aware or
+segmented scheduling separates when the stylist is *needed* from when the
+customer *arrives*, and "does the service fit inside one working window" becomes
+"does each segment fit". The four rules survive that; what changes is what a
+span means.
+
+## 31. The buffer is dropped only when nothing follows it — _2026-08-20_
+**Decision:** No mid-day exception to the buffer. Availability continues to
+require a service *and* its buffer to fit between two appointments. The one
+place the buffer may overhang is the end of the working day, which
+`get_available_slots()` already does and `schedule_permits()` deliberately
+mirrors.
+**Why:** The proposal was to strip the buffer when a gap is nearly big enough —
+20 to 25 minutes — so something can be squeezed in. Two reasons not to.
+
+The arithmetic does not work. Every bookable service is 30 minutes or longer, so
+a 25 minute hole fits nothing even with the buffer removed. The window where it
+would change anything at all is 30 to 34 minutes.
+
+And in that window it is still wrong. The buffer is not slack in the schedule;
+it is sweeping hair off the floor and wiping down the chair. That work does not
+disappear when the time stops being reserved — the stylist either does it and
+runs late into the next customer, or skips it and the next customer sits down in
+the last person's hair. Removing the buffer does not create thirty minutes, it
+sells thirty minutes the salon does not have and moves the cost somewhere the
+calendar cannot see. It would also fire at the worst possible moment: a 30
+minute hole between two bookings means the day is already tight, which is
+exactly when a stylist is most likely to run over and when the cushion is doing
+the most work.
+
+The end-of-day exception is safe for the opposite reason, and it is the reason
+worth remembering: **nothing comes after it.** The stylist still sweeps up, at
+18:05 rather than 17:55, and no customer is waiting.
+**Alternative rejected:** An automatic exception for gaps of 30–34 minutes.
+Rejected above. Two better routes to the same minutes, neither needing code:
+shorten the buffer on that service deliberately — it is per-service and
+editable, so if a trim genuinely needs three minutes of cleanup rather than
+five, say so once and consistently — or put a genuinely short service on the
+menu, which fills the hole honestly and gives the customer something that
+actually fits it. Staff can also still squeeze anyone in by hand at any time,
+and that judgement sits with the person who can see the room.
+**Revisit when:** The salon says a specific service needs no cleanup gap. That
+is them telling us the buffer is wrong, and the fix is the buffer rather than an
+exception to it.
+
 ---
 
 ## Template for new entries

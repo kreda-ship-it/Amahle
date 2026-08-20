@@ -321,6 +321,21 @@ settled, and the map link is correct.
         is offered the same times as one who does not. Nothing is wrong; the day
         is simply less tightly packed than it could be. The receptionist can
         still squeeze a wash in by phone, because staff bypass availability
+      - **Build it as SEGMENTED SERVICES, not as a wash feature.** Added
+        2026-08-20. Every established salon platform models a service as a
+        sequence — **active, gap, active** — rather than one solid block.
+        Colour is applied, it develops for forty minutes with the stylist
+        free, then it is rinsed and finished. A wash by a different person is
+        the same shape, and so is any assistant-led step. Build it for washes
+        alone and it gets built again the first time somebody asks about
+        colour processing time. Segments cover all of them, and they also
+        cover the case the salon has not raised yet: a stylist starting a
+        second client during the first one's development time, which is where
+        the recovered revenue actually is
+      - **DECISIONS #30 does not block this.** `schedule_permits()` asks
+        whether a span fits inside one working window. Segments turn one span
+        into several, so the question becomes "does each segment fit" — the
+        four rules survive, and nothing else on the write path has to move
 - [x] **Public booking form** — stages A to E, plus holds
       - [x] **Stage A — the picker.** Service, stylist or anyone, day, time.
             `/book`, state held in the URL so the back button works and times
@@ -379,6 +394,61 @@ settled, and the map link is correct.
       `critical` tier, by trigger rather than by application code, so a direct
       API write is logged too
 
+### How times are offered — designed 2026-08-20, not built
+
+Five changes to what the picker shows, in the order they should happen. None of
+them touch `schedule_permits()`, which is the point of DECISIONS #30: what is
+*offered* can be reshaped freely, and `test-availability.sql` check 9 fails the
+moment a change would offer something the write path refuses.
+
+1. **A clock-aligned grid, alongside the anchored times.** Today a free stretch
+   beginning at 11:35 offers 11:35, 12:05, 12:35 — and never 12:00, which is
+   free the whole time. The sequence inherits its offset from wherever the
+   previous appointment happened to end, so one customer's straw curl sets the
+   rhythm of the rest of the day. Nobody chose that; it is a side effect.
+   Offering both the anchored time and a round grid gives the salon its packing
+   and the customer a time they would say out loud.
+   **What it costs, so it is a choice and not a freebie:** someone books 12:00
+   instead of 11:35, leaving 25 dead minutes — and the person who would have
+   taken 11:35 now cannot, because their trim would run past 12:00. Offering
+   the round number can destroy the tight one. Worth it here: an offered time
+   that converts beats a tight time nobody picks. Note the limit in the
+   comment — wall-clock alignment uses the same epoch arithmetic as
+   `round_up_to_minutes()`, which is exact for any timezone whose offset
+   divides evenly by the grid. Fine for 30 minutes anywhere in the US; Nepal's
+   5:45 offset would drift
+2. **One button per time, not per stylist.** With "anyone" chosen the picker
+   renders a separate button for every qualified stylist at every time — four
+   buttons all saying 09:00. At today's 105 minute step that is about 24
+   buttons a day; at 30 it becomes 80 on a phone. Show each time once and
+   assign the stylist on tap. The full list stays server-side, so "someone else
+   at the same time" keeps working — it reads the list, not the buttons
+3. **`slot_step_minutes` to 30.** One `UPDATE`, no migration, but only after 2
+   or the page gets worse rather than better. **Write down the rule and not the
+   number: the step should be about as long as the shortest bookable service.**
+   30 is right because Trim, Men's Haircut and Children's Haircut are all 30
+   minutes. Add a 20 minute service next spring and that reasoning expires
+   silently unless the rule is recorded
+4. **Morning / afternoon / evening grouping.** Two-level narrowing, which is
+   what a long list actually needs. Considered and rejected: an alarm-clock
+   style hour-and-minute picker with unavailable values greyed out. A wheel is
+   a grid, and migration 018 deliberately threw the grid away — the valid
+   minutes are irregular ({10, 40} in the morning, {45}, then {15, 45}) because
+   they are anchored to when the previous appointment ended plus *that
+   customer's* buffer. The minute column would re-grey on every hour change and
+   hold one or two live values out of sixty. Once the clock grid in 1 exists
+   the two designs largely converge, and this becomes a layout preference
+   rather than a correctness question
+5. **Short services on the menu.** Nothing to build — the gap model already
+   fits any duration into any stretch that will hold it, because availability
+   subtracts busy ranges rather than stepping a grid. Two things to remember
+   when they arrive: give a short service an **explicit** buffer rather than
+   letting it inherit the house default (migration 019's comment already warns
+   that a 10 minute default is half of a 20 minute service), and revisit the
+   step rule in 3. The cleaner end state is probably to drop the salon-wide
+   step entirely and step by each service's own length — self-tuning, with the
+   grid in 1 providing the tidiness the step was invented for
+
 ### Phase 5 — Staff calendar
 - [ ] Day view
 - [ ] Week view
@@ -386,6 +456,15 @@ settled, and the map link is correct.
 - [ ] Edit and reschedule
 - [ ] Cancel (soft-delete)
 - [ ] Appointment status changes
+- [ ] **Marking a no-show — in the FIRST version of the calendar, not a later
+      one.** Added 2026-08-20. DECISIONS #12 defers deposits until "no-shows
+      become a measured problem the salon complains about", and DECISIONS #29
+      defers reminders on a similar trigger. Neither trigger can fire today:
+      nothing in the system can set an appointment to `no_show`, so there is no
+      number to measure. Salon no-show rates typically run 15–25%; reminders
+      cut that by around a third, and reminders plus a deposit take it under
+      ten percent. Three months of real rows turns that from an argument into
+      arithmetic. Costs nothing to include now and cannot be backfilled later
 - [ ] Stylist sees only their own schedule; owner sees all
 
 ### Phase 6 — Records and permissions
@@ -461,5 +540,26 @@ Nothing here gets built until the salon has used v1 for real, for weeks.
       Days to weeks, waiting on someone else's queue, so it is the item to start
       first rather than last
 - [ ] Does the salon have photos for the gallery, or do we need to arrange them?
+- [ ] **Does the receptionist get `service.manage`?** Raised 2026-08-20. The
+      assumption in conversation was that the owner *and receptionist* can
+      change how long a service takes. The database does not allow that today:
+      `service.manage` is held by Owner and Manager only. One row in
+      `role_permissions` changes it — but note the same key also controls
+      **prices**, because its description is "Add and edit services, prices and
+      durations". There is no way to hand over durations without handing over
+      prices unless a second key is created, which is the same shape of
+      decision as DECISIONS #24. Recommendation: one key is enough and the
+      receptionist should have it — they are the person who knows a particular
+      customer's colour runs long. Decide it in Phase 6 with the permissions
+      UI and write it up either way
+- [ ] **Teach `audit-tenant-safety.sql` about `appointment_holds`.** Raised
+      2026-08-20. It now reports two warnings that are both deliberate and both
+      documented in migration 022: no `deleted_at` (because `released_at` does
+      that job and says what actually happened) and RLS on with no policies
+      (because the table is reached only through `hold_slot()` and
+      `get_holds()`, which is what stops a browser reserving every slot in the
+      salon). The script's own promise is "no rows means clean". While that is
+      false, people learn to scroll past the output, which costs more than the
+      warnings are worth
 - [ ] Deposit / no-show policy — does v1 need to display one?
 - [ ] Which country's data protection law applies (GDPR / POPIA / other)?
