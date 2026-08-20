@@ -23,15 +23,21 @@ import { getOrganization } from "@/lib/site/organization";
  * key of any kind.
  *
  * Almost nothing is validated here. The database refuses a service that is not
- * bookable online, a stylist who does not perform it, a time in the past and a
- * slot already taken — and it refuses them whatever calls it, which a check in
- * this file could never claim. What is checked here is only what a *form*
+ * bookable online, a stylist who does not perform it, a time in the past, a
+ * time nobody is rostered to work, and a slot already taken — and it refuses
+ * them whatever calls it, which a check in this file could never claim. What is checked here is only what a *form*
  * knows about: that someone filled the boxes in.
  */
 
-/** An alternative offered when the chosen slot has gone. */
+/**
+ * An alternative offered when the chosen slot has gone.
+ *
+ * `fields` are hidden inputs for `chooseTime`, built here rather than in
+ * the browser: choosing one of these reserves it, and the form component
+ * holds no booking logic of its own.
+ */
 export type Alternative = {
-  href: string;
+  fields: { name: string; value: string }[];
   time: string;
   employee: string;
   sameTime: boolean;
@@ -209,6 +215,8 @@ export async function submitBooking(
             timezone: org.timezone,
             serviceIds,
             startsAt: hold.startsAt,
+            party,
+            person,
           }),
         };
       }
@@ -240,6 +248,9 @@ async function findAlternatives(input: {
   timezone: string;
   serviceIds: string[];
   startsAt: string;
+  /** So the picker can be rebuilt exactly where the customer left it. */
+  party: number;
+  person: number;
 }): Promise<Alternative[]> {
   const day = salonDateKey(input.startsAt, input.timezone);
 
@@ -272,22 +283,34 @@ async function findAlternatives(input: {
     })
     .slice(0, 6);
 
-  return scored.map(({ slot, sameTime }) => {
-    const query = new URLSearchParams({
-      services: input.serviceIds.join(","),
-      date: day,
-      at: slot.startsAt,
-    });
+  const serviceIds = input.serviceIds.join(",");
 
-    return {
-      href: `/book?${query.toString()}`,
-      time: salonTime(slot.startsAt, input.timezone),
-      employee:
-        employees.find((employee) => employee.id === slot.employeeId)
-          ?.full_name ?? "our team",
-      sameTime,
-    };
-  });
+  return scored.map(({ slot, sameTime }) => ({
+    /*
+     * Everything `chooseTime` needs, plus the `q:` parameters it hands
+     * straight back to the picker. These are the names the page actually
+     * reads — `party`, `p`, `s{person}`. The previous version sent
+     * `services` and `at`, which nothing reads, and no `party` at all,
+     * so clampParty() returned null and the customer was dropped back on
+     * the "how many people are coming?" screen at the exact moment they
+     * were most likely to give up.
+     */
+    fields: [
+      { name: "q:party", value: String(input.party) },
+      { name: "q:p", value: String(input.person) },
+      { name: `q:s${input.person}`, value: serviceIds },
+      { name: "serviceIds", value: serviceIds },
+      { name: "employeeId", value: slot.employeeId },
+      { name: "startsAt", value: slot.startsAt },
+      { name: "partyIndex", value: String(input.person) },
+      { name: "date", value: day },
+    ],
+    time: salonTime(slot.startsAt, input.timezone),
+    employee:
+      employees.find((employee) => employee.id === slot.employeeId)
+        ?.full_name ?? "our team",
+    sameTime,
+  }));
 }
 
 function text(formData: FormData, field: string): string {

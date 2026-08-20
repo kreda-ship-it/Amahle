@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 
-import { submitBooking, type BookingState } from "./actions";
+import { chooseTime, submitBooking, type BookingState } from "./actions";
 
 /**
  * The last step: who to contact, and the button that makes it real.
@@ -39,85 +38,7 @@ export function BookingForm({
   const party = people.length;
 
   return (
-    <form action={action} className="mt-6">
-      <input type="hidden" name="party" value={party} />
-
-      {people.map((person, index) => (
-        <input
-          key={index}
-          type="hidden"
-          name={`services${index}`}
-          value={person.serviceIds}
-        />
-      ))}
-
-      <ol className="space-y-2">
-        {people.map((person, index) => (
-          <li key={index} className="text-pretty">
-            {party > 1 && (
-              <span className="font-medium">
-                {index === 0 ? "You" : `Person ${index + 1}`}:{" "}
-              </span>
-            )}
-            {person.summary}
-          </li>
-        ))}
-      </ol>
-
-      <p className="mt-3 text-sm text-ink-muted">
-        Held for you until {heldUntil}.
-      </p>
-
-      <div className="mt-6 space-y-4">
-        <Field
-          label="Your name"
-          name="customerName"
-          autoComplete="name"
-          required
-        />
-
-        <Field
-          label="Phone number"
-          name="customerPhone"
-          type="tel"
-          autoComplete="tel"
-          required
-          hint="So we can reach you if anything changes."
-        />
-
-        <Field
-          label="Email"
-          name="customerEmail"
-          type="email"
-          autoComplete="email"
-          hint="Optional."
-        />
-
-        {/* One name box per extra person, so the salon knows who is in each
-            chair. Optional — "Person 2" is better than a blocked booking. */}
-        {people.slice(1).map((_, index) => (
-          <Field
-            key={index}
-            label={`Name of person ${index + 2}`}
-            name={`forName${index + 1}`}
-            hint="Optional — so we know who to expect."
-          />
-        ))}
-
-        <div>
-          <label htmlFor="notes" className="block text-sm font-medium">
-            Anything we should know?
-          </label>
-
-          <textarea
-            id="notes"
-            name="notes"
-            rows={3}
-            className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 outline-none focus:border-brand"
-          />
-        </div>
-      </div>
-
+    <>
       {state.status === "error" && (
         <div
           role="alert"
@@ -131,21 +52,40 @@ export function BookingForm({
                 These are still free:
               </p>
 
+              {/*
+                A form each, not a link — the same rule the time grid
+                follows. Choosing one of these RESERVES it, and a write
+                must not happen because something was followed in a way a
+                crawler or a prefetch can imitate.
+
+                This block sits outside the booking form below rather
+                than inside it, because a form cannot contain a form.
+              */}
               <div className="mt-3 flex flex-wrap gap-2">
-                {state.alternatives.map((alternative) => (
-                  <Link
-                    key={alternative.href}
-                    href={alternative.href}
-                    className="rounded-full border border-line bg-surface px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
-                  >
-                    <span className="font-medium">{alternative.time}</span>
-                    <span className="ml-2 text-ink-muted">
-                      {alternative.employee}
-                    </span>
-                    {alternative.sameTime && (
-                      <span className="ml-2 text-brand">same time</span>
-                    )}
-                  </Link>
+                {state.alternatives.map((alternative, index) => (
+                  <form key={index} action={chooseTime}>
+                    {alternative.fields.map((field) => (
+                      <input
+                        key={field.name}
+                        type="hidden"
+                        name={field.name}
+                        value={field.value}
+                      />
+                    ))}
+
+                    <button
+                      type="submit"
+                      className="rounded-full border border-line bg-surface px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
+                    >
+                      <span className="font-medium">{alternative.time}</span>
+                      <span className="ml-2 text-ink-muted">
+                        {alternative.employee}
+                      </span>
+                      {alternative.sameTime && (
+                        <span className="ml-2 text-brand">same time</span>
+                      )}
+                    </button>
+                  </form>
                 ))}
               </div>
             </>
@@ -153,19 +93,99 @@ export function BookingForm({
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="mt-8 w-full rounded-full bg-brand px-6 py-3.5 font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-60 sm:w-auto"
-      >
-        {pending ? "Booking…" : party > 1 ? "Book all appointments" : "Confirm booking"}
-      </button>
+      <form action={action} className="mt-6">
+        <input type="hidden" name="party" value={party} />
 
-      <p className="mt-4 text-sm text-ink-muted text-pretty">
-        No account needed. We only use your number to contact you about this
-        appointment.
-      </p>
-    </form>
+        {people.map((person, index) => (
+          <input
+            key={index}
+            type="hidden"
+            name={`services${index}`}
+            value={person.serviceIds}
+          />
+        ))}
+
+        <ol className="space-y-2">
+          {people.map((person, index) => (
+            <li key={index} className="text-pretty">
+              {party > 1 && (
+                <span className="font-medium">
+                  {index === 0 ? "You" : `Person ${index + 1}`}:{" "}
+                </span>
+              )}
+              {person.summary}
+            </li>
+          ))}
+        </ol>
+
+        <p className="mt-3 text-sm text-ink-muted">
+          Held for you until {heldUntil}.
+        </p>
+
+        <div className="mt-6 space-y-4">
+          <Field
+            label="Your name"
+            name="customerName"
+            autoComplete="name"
+            required
+          />
+
+          <Field
+            label="Phone number"
+            name="customerPhone"
+            type="tel"
+            autoComplete="tel"
+            required
+            hint="So we can reach you if anything changes."
+          />
+
+          <Field
+            label="Email"
+            name="customerEmail"
+            type="email"
+            autoComplete="email"
+            hint="Optional."
+          />
+
+          {/* One name box per extra person, so the salon knows who is in each
+              chair. Optional — "Person 2" is better than a blocked booking. */}
+          {people.slice(1).map((_, index) => (
+            <Field
+              key={index}
+              label={`Name of person ${index + 2}`}
+              name={`forName${index + 1}`}
+              hint="Optional — so we know who to expect."
+            />
+          ))}
+
+          <div>
+            <label htmlFor="notes" className="block text-sm font-medium">
+              Anything we should know?
+            </label>
+
+            <textarea
+              id="notes"
+              name="notes"
+              rows={3}
+              className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 outline-none focus:border-brand"
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={pending}
+          className="mt-8 w-full rounded-full bg-brand px-6 py-3.5 font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-60 sm:w-auto"
+        >
+          {pending ? "Booking…" : party > 1 ? "Book all appointments" : "Confirm booking"}
+        </button>
+
+        <p className="mt-4 text-sm text-ink-muted text-pretty">
+          No account needed. We only use your number to contact you about this
+          appointment.
+        </p>
+      </form>
+    </>
   );
 }
 
