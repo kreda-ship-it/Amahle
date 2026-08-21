@@ -3,9 +3,10 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { imageUrl } from "@/lib/site/images";
+import { stockLogo } from "@/lib/site/stock-photos";
 import { getOrganization } from "@/lib/site/organization";
 import { salonStructuredData } from "@/lib/site/structured-data";
-import { siteUrl } from "@/lib/site/url";
+import { mapsHref, siteUrl } from "@/lib/site/url";
 
 /**
  * The chrome every public page shares — the header at the top and the footer
@@ -92,6 +93,25 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/**
+ * The salon's town, pulled off the front of its address.
+ *
+ * "7851 Eastern Ave, Silver Spring, MD 20910" is written the way a postal
+ * service wants it, and the line under the shop name wants only the middle
+ * part. Splitting on commas is crude, and it is right for every address the
+ * form accepts: number and street, town, then state and ZIP.
+ *
+ * Returns null rather than guessing when the address is a single line — a
+ * missing town prints nothing, which is better than printing half a street.
+ */
+function townOf(address: string | null): string | null {
+  if (!address) return null;
+
+  const parts = address.split(",").map((part) => part.trim());
+
+  return parts.length >= 2 ? (parts[1] ?? null) : null;
+}
+
 export default async function PublicLayout({
   children,
 }: {
@@ -99,7 +119,17 @@ export default async function PublicLayout({
 }) {
   const org = await getOrganization();
   const { social } = org.content;
-  const logo = imageUrl(org.content.logoPath);
+  /*
+   * The salon's own logo if it has uploaded one, and the file in /public
+   * until it does. Same pattern as every other image on the site: the
+   * database is asked first, and the fallback disappears on its own the day
+   * there is something to find.
+   */
+  const uploadedLogo = imageUrl(org.content.logoPath);
+  const fallbackLogo = stockLogo();
+  const logo = uploadedLogo ?? fallbackLogo.url;
+  const logoAlt = uploadedLogo ? org.name : fallbackLogo.alt;
+  const town = townOf(org.address);
 
   const socialLinks = [
     { label: "Instagram", href: social.instagram },
@@ -107,6 +137,20 @@ export default async function PublicLayout({
     { label: "Yelp", href: social.yelp },
     { label: "Facebook", href: social.facebook },
   ].filter((link) => link.href !== null);
+
+  const navLinks = [
+    { label: "Services", href: "/services" },
+    { label: "Team", href: "/team" },
+    { label: "Gallery", href: "/gallery" },
+    { label: "Visit", href: "/contact" },
+  ];
+
+  const establishedLine = [
+    org.content.foundedYear ? `Est. ${org.content.foundedYear}` : null,
+    town,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <>
@@ -128,142 +172,224 @@ export default async function PublicLayout({
         }}
       />
 
-      <header className="border-b border-line">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-4">
+      {/*
+        Everything public lives inside `theme-dark`. The class carries the
+        palette (see globals.css) — the staff area sits outside it and stays
+        light, which is why the tool and the shopfront can look nothing alike
+        while sharing every component.
+      */}
+      <div className="theme-dark flex flex-1 flex-col">
+      {/*
+        The header follows you down the page.
+
+        `sticky` rather than `fixed`: a sticky element still takes up its own
+        space at the top of the document, so nothing has to be pushed down by
+        a matching margin that then has to be kept in step by hand.
+
+        `backdrop-blur` with a nearly-opaque background is what stops the
+        photographs underneath from showing through as mud while still giving
+        the bar a sense of depth as content slides under it.
+      */}
+      <header className="sticky top-0 z-30 border-b border-line bg-surface/80 backdrop-blur-md">
+        <div className="shell flex h-20 items-center justify-between gap-6 lg:h-24">
           {/*
-            A logo when the salon has one, its name in type when it does not.
-            The alt text is the salon's name either way — a logo's job is to
-            say who this is, so that is what someone using a screen reader
+            A logo when the salon has one, its name set in type when it does
+            not. The alt text is the salon's name either way — a logo's job is
+            to say who this is, so that is what someone using a screen reader
             needs to hear. Never "logo".
           */}
-          <Link href="/" className="flex items-center gap-3">
-            {logo ? (
-              <Image
-                src={logo}
-                alt={org.name}
-                width={160}
-                height={40}
-                priority
-                className="h-9 w-auto sm:h-10"
-              />
-            ) : (
-              <span className="font-display text-lg font-semibold text-ink sm:text-xl">
-                {org.name}
+          <Link href="/" className="flex min-w-0 items-center gap-4">
+            {/*
+              `blend-gold` is what makes the logo's black square vanish into
+              the bar behind it — see the note on the utility in globals.css.
+              Without it there is a visible rectangle around the artwork.
+            */}
+            <Image
+              src={logo}
+              alt={logoAlt}
+              width={1164}
+              height={824}
+              priority
+              className="blend-gold h-12 w-auto lg:h-16"
+            />
+
+            {/*
+              Hidden below `lg`. On a phone the logo alone fills the bar, and
+              a founding year squeezed in beside it is the first thing to wrap
+              onto a second line and break the header.
+            */}
+            {establishedLine && (
+              <span className="label hidden shrink-0 text-ink-muted lg:inline">
+                {establishedLine}
               </span>
             )}
           </Link>
 
-          {/*
-            One entry per page that actually exists. Team, Gallery and Contact
-            add their own as they are built — a link to a page that does not
-            exist is worse than no link.
-          */}
-          <nav className="order-last w-full sm:order-none sm:w-auto">
-            <ul className="flex flex-wrap gap-5 text-sm">
-              <li>
-                <Link href="/services" className="hover:text-brand">
-                  Services &amp; Pricing
-                </Link>
-              </li>
-              <li>
-                <Link href="/team" className="hover:text-brand">
-                  Our Team
-                </Link>
-              </li>
-              <li>
-                <Link href="/gallery" className="hover:text-brand">
-                  Gallery
-                </Link>
-              </li>
-              <li>
-                <Link href="/contact" className="hover:text-brand">
-                  Visit Us
-                </Link>
-              </li>
-              <li>
-                <Link href="/book" className="font-medium text-brand hover:underline">
-                  Book Online
-                </Link>
-              </li>
-            </ul>
-          </nav>
+          <div className="flex items-center gap-6">
+            {/*
+              The full menu appears once there is room for it. Below that the
+              four pages are reachable from the footer and from the site's own
+              sections, and the bar keeps the one control that matters.
+            */}
+            <nav className="hidden md:block">
+              <ul className="flex items-center gap-7">
+                {navLinks.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className="text-sm text-ink-muted transition-colors hover:text-ink"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
 
-          {org.phone && (
-            <a
-              href={telHref(org.phone)}
-              className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-strong"
+            {org.phone && (
+              <a
+                href={telHref(org.phone)}
+                className="hidden text-sm text-ink-muted transition-colors hover:text-ink lg:block"
+              >
+                {org.phone}
+              </a>
+            )}
+
+            <Link
+              href="/book"
+              className="btn bg-brand px-7 py-3 text-ink-inverse hover:bg-brand-strong"
             >
-              Call {org.phone}
-            </a>
-          )}
+              Book
+            </Link>
+          </div>
         </div>
+
+        {/*
+          The same four links again, as a row under the bar, for the screens
+          too narrow to fit them beside the logo.
+
+          A scrolling row rather than a hamburger menu. A menu button needs
+          JavaScript, a state variable, an outside-click handler and a focus
+          trap to be usable with a keyboard — all of that to hide four words
+          that fit on the screen anyway.
+        */}
+        <nav className="border-t border-line md:hidden">
+          <ul className="shell flex gap-6 overflow-x-auto py-3">
+            {navLinks.map((link) => (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  className="label whitespace-nowrap text-ink-muted transition-colors hover:text-ink"
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </header>
 
       <main className="flex-1">{children}</main>
 
-      <footer className="mt-16 border-t border-line bg-surface-sunk">
-        <div className="mx-auto grid max-w-5xl gap-8 px-5 py-12 sm:grid-cols-2">
-          <div>
-            <h2 className="font-display text-lg font-semibold">{org.name}</h2>
+      <footer className="mt-20 bg-surround text-ink">
+        <div className="shell grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4 lg:py-16">
+          <div className="lg:col-span-2">
+            <h2 className="font-display text-3xl font-light">
+              {org.name}
+            </h2>
 
-            {org.address && (
-              <p className="mt-3 text-sm text-ink-muted">{org.address}</p>
-            )}
-
-            {org.phone && (
-              <p className="mt-1 text-sm">
-                <a className="hover:text-brand" href={telHref(org.phone)}>
-                  {org.phone}
-                </a>
-              </p>
-            )}
-
-            {org.content.textNumber && (
-              <p className="mt-1 text-sm">
-                <a
-                  className="hover:text-brand"
-                  href={smsHref(org.content.textNumber)}
-                >
-                  Text {org.content.textNumber}
-                </a>
-              </p>
-            )}
-
-            {org.email && (
-              <p className="mt-1 text-sm">
-                <a className="hover:text-brand" href={`mailto:${org.email}`}>
-                  {org.email}
-                </a>
+            {org.content.tagline && (
+              <p className="mt-3 max-w-sm text-sm leading-relaxed text-ink-muted">
+                {org.content.tagline}
               </p>
             )}
           </div>
 
-          {socialLinks.length > 0 && (
-            <div>
-              <h2 className="text-sm font-medium tracking-wide text-ink-muted uppercase">
-                Follow us
-              </h2>
+          <div>
+            <h3 className="label text-ink-muted">Visit</h3>
 
-              <ul className="mt-3 space-y-1 text-sm">
-                {socialLinks.map((link) => (
-                  <li key={link.label}>
-                    <a
-                      href={link.href ?? undefined}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-brand"
-                    >
-                      {link.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+            {org.address && (
+              <p className="mt-4 text-sm leading-relaxed">
+                <a
+                  href={mapsHref(org.address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-ink/80 underline decoration-line underline-offset-4 transition-colors hover:text-brand hover:decoration-brand"
+                >
+                  {org.address}
+                </a>
+              </p>
+            )}
+
+            <ul className="mt-4 space-y-1.5 text-sm">
+              {org.phone && (
+                <li>
+                  <a
+                    className="transition-colors hover:text-brand"
+                    href={telHref(org.phone)}
+                  >
+                    {org.phone}
+                  </a>
+                </li>
+              )}
+
+              {org.content.textNumber && (
+                <li>
+                  <a
+                    className="transition-colors hover:text-brand"
+                    href={smsHref(org.content.textNumber)}
+                  >
+                    Text {org.content.textNumber}
+                  </a>
+                </li>
+              )}
+
+              {org.email && (
+                <li>
+                  <a
+                    className="transition-colors hover:text-brand"
+                    href={`mailto:${org.email}`}
+                  >
+                    {org.email}
+                  </a>
+                </li>
+              )}
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="label text-ink-muted">More</h3>
+
+            <ul className="mt-4 space-y-1.5 text-sm">
+              {navLinks.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className="transition-colors hover:text-brand"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+
+              {socialLinks.map((link) => (
+                <li key={link.label}>
+                  <a
+                    href={link.href ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="transition-colors hover:text-brand"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         <div className="border-t border-line">
-          <div className="mx-auto flex max-w-5xl flex-wrap justify-between gap-3 px-5 py-5 text-xs text-ink-muted">
+          <div className="shell flex flex-wrap justify-between gap-3 py-5 text-xs text-ink-muted">
             <p>
               © {new Date().getFullYear()} {org.name}
             </p>
@@ -274,12 +400,13 @@ export default async function PublicLayout({
               asking the database here would cost a query on every public page
               load and change nothing a visitor sees.
             */}
-            <Link href="/staff" className="hover:text-brand">
+            <Link href="/staff" className="transition-colors hover:text-brand">
               Staff sign in
             </Link>
           </div>
         </div>
       </footer>
+      </div>
     </>
   );
 }

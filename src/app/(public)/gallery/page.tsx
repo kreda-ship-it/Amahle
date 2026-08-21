@@ -5,6 +5,9 @@ import { imageUrl } from "@/lib/site/images";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+import { BookingCta } from "../booking-cta";
+import { PageHeading } from "../page-heading";
+
 /**
  * The gallery.
  *
@@ -39,17 +42,15 @@ export default async function GalleryPage() {
   const instagram = org.content.social.instagram;
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-16">
-      <h1 className="font-display text-4xl font-semibold sm:text-5xl">
-        Gallery
-      </h1>
-
-      <p className="mt-4 max-w-2xl text-lg text-ink-muted text-pretty">
-        A look inside the salon.
-      </p>
+    <>
+      <PageHeading
+        eyebrow="Gallery"
+        title="A look inside the salon"
+        intro="Photographs of work done in this chair, by these hands."
+      />
 
       {error || images.length === 0 ? (
-        <div className="mt-12 rounded-3xl bg-surface-sunk px-6 py-12 text-center">
+        <div className="border-b border-line bg-surface-sunk/50 shell py-14 text-center">
           <p className="mx-auto max-w-md text-ink-muted text-pretty">
             We are putting our photographs together. In the meantime, our most
             recent work is on Instagram.
@@ -60,9 +61,9 @@ export default async function GalleryPage() {
               href={instagram}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-6 inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
+              className="label btn mt-6 bg-brand text-ink-inverse hover:bg-brand-strong"
             >
-              See our work on Instagram
+              See our work on Instagram &rarr;
             </a>
           )}
         </div>
@@ -73,13 +74,13 @@ export default async function GalleryPage() {
          * a grid would crop the top off a tall one. Columns let each image
          * keep its own proportions.
          */
-        <ul className="mt-12 gap-5 sm:columns-2 lg:columns-3">
+        <ul className="shell gap-4 py-10 sm:columns-2 lg:columns-3">
           {images.map((image) => {
             const url = imageUrl(image.storage_path);
             if (!url) return null;
 
             return (
-              <li key={image.id} className="mb-5 break-inside-avoid">
+              <li key={image.id} className="mb-4 break-inside-avoid">
                 <figure>
                   <Image
                     src={url}
@@ -87,11 +88,11 @@ export default async function GalleryPage() {
                     width={800}
                     height={1000}
                     sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                    className="h-auto w-full rounded-2xl bg-surface-sunk"
+                    className="h-auto w-full bg-surface-sunk"
                   />
 
                   {image.caption && (
-                    <figcaption className="mt-2 text-sm text-ink-muted text-pretty">
+                    <figcaption className="label mt-2 text-ink-muted">
                       {image.caption}
                     </figcaption>
                   )}
@@ -101,6 +102,8 @@ export default async function GalleryPage() {
           })}
         </ul>
       )}
-    </div>
+
+      <BookingCta phone={org.phone} />
+    </>
   );
 }

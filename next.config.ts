@@ -19,15 +19,34 @@ const supabaseHostname = supabaseUrl ? new URL(supabaseUrl).hostname : null;
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: supabaseHostname
-      ? [
-          {
-            protocol: "https",
-            hostname: supabaseHostname,
-            pathname: "/storage/v1/object/public/**",
-          },
-        ]
-      : [],
+    remotePatterns: [
+      ...(supabaseHostname
+        ? [
+            {
+              protocol: "https" as const,
+              hostname: supabaseHostname,
+              pathname: "/storage/v1/object/public/**",
+            },
+          ]
+        : []),
+
+      /*
+       * TEMPORARY — the stand-in photographs in /lib/site/stock-photos.ts.
+       *
+       * The salon has not uploaded its own pictures yet, and a design made of
+       * grey rectangles cannot be judged. These come from Unsplash so the
+       * layout can be seen with real photographs in it.
+       *
+       * Delete this entry the day the salon's own photographs are in Supabase
+       * Storage. Nothing else has to change: every page reads its own image
+       * first and only falls back to these when there is nothing to read.
+       */
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+        pathname: "/**",
+      },
+    ],
   },
 };
 

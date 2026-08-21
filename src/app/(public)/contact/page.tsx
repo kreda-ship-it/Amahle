@@ -3,6 +3,9 @@ import type { Metadata } from "next";
 import { formatTime } from "@/lib/site/hours";
 import { getOrganization } from "@/lib/site/organization";
 
+import { BookingCta } from "../booking-cta";
+import { PageHeading } from "../page-heading";
+
 /**
  * Contact, hours and directions.
  *
@@ -40,18 +43,18 @@ export default async function ContactPage() {
     : null;
 
   return (
-    <div className="mx-auto max-w-3xl px-5 py-16">
-      <h1 className="font-display text-4xl font-semibold sm:text-5xl">
-        Visit Us
-      </h1>
+    <>
+      <PageHeading
+        eyebrow="Visit"
+        title="Where to find us"
+        intro="Call to book, or come in and say hello."
+      />
 
-      <p className="mt-4 max-w-2xl text-lg text-ink-muted text-pretty">
-        Call to book, or come in and say hello.
-      </p>
-
-      <div className="mt-12 grid gap-12 sm:grid-cols-2">
+      <div className="shell grid gap-10 py-10 sm:grid-cols-2">
         <section>
-          <h2 className="font-display text-xl font-semibold">Where we are</h2>
+          <h2 className="label border-b border-brand/30 pb-3 text-ink">
+            Where we are
+          </h2>
 
           {org.address ? (
             <>
@@ -60,8 +63,15 @@ export default async function ContactPage() {
                 page's owner, and browsers and screen readers treat it as such.
                 It italicises by default, which is not wanted here.
               */}
-              <address className="mt-3 not-italic text-ink-muted">
-                {org.address}
+              <address className="mt-4 not-italic">
+                <a
+                  href={directionsUrl ?? "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-display text-2xl leading-snug text-pretty underline decoration-brand/40 underline-offset-8 transition-colors hover:decoration-brand"
+                >
+                  {org.address}
+                </a>
               </address>
 
               {directionsUrl && (
@@ -69,28 +79,28 @@ export default async function ContactPage() {
                   href={directionsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block font-medium text-brand hover:text-brand-strong"
+                  className="label mt-3 inline-block border-b border-brand pb-1 text-brand transition-colors hover:border-brand-strong hover:text-brand-strong"
                 >
-                  Get directions
+                  Directions &rarr;
                 </a>
               )}
             </>
           ) : (
-            <p className="mt-3 text-ink-muted">
+            <p className="mt-4 text-ink-muted">
               Call us and we will point you the right way.
             </p>
           )}
         </section>
 
         <section>
-          <h2 className="font-display text-xl font-semibold">Reach us</h2>
+          <h2 className="label border-b border-brand/30 pb-3 text-ink">Reach us</h2>
 
-          <ul className="mt-3 space-y-2 text-ink-muted">
+          <ul className="mt-4 space-y-2">
             {org.phone && (
               <li>
                 <a
                   href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-                  className="hover:text-brand"
+                  className="font-display text-2xl font-normal transition-colors hover:text-brand"
                 >
                   {org.phone}
                 </a>
@@ -101,16 +111,19 @@ export default async function ContactPage() {
               <li>
                 <a
                   href={`sms:${textNumber.replace(/[^\d+]/g, "")}`}
-                  className="hover:text-brand"
+                  className="transition-colors hover:text-brand"
                 >
-                  {textNumber} <span className="text-sm">(text)</span>
+                  {textNumber} <span className="label text-ink-muted">Text</span>
                 </a>
               </li>
             )}
 
             {org.email && (
               <li>
-                <a href={`mailto:${org.email}`} className="hover:text-brand">
+                <a
+                  href={`mailto:${org.email}`}
+                  className="text-ink-muted transition-colors hover:text-brand"
+                >
                   {org.email}
                 </a>
               </li>
@@ -120,28 +133,30 @@ export default async function ContactPage() {
       </div>
 
       {hours.length > 0 && (
-        <section className="mt-12">
-          <h2 className="font-display text-xl font-semibold">Opening hours</h2>
+        <section className="shell pb-14">
+          <h2 className="label border-b border-brand/30 pb-3 text-ink">
+            Opening hours
+          </h2>
 
           {/*
             All seven days, one per row, rather than the homepage's collapsed
             runs. Somebody on this page came looking for one particular day.
           */}
-          <ul className="mt-4 divide-y divide-line border-y border-line">
+          <ul className="divide-y divide-line border-b border-line">
             {hours.map((entry) => (
               <li
                 key={entry.day}
-                className="flex justify-between gap-6 py-3 text-ink-muted"
+                className="label flex justify-between gap-6 py-3"
               >
-                <span className="font-medium text-ink">{entry.day}</span>
-                <span className="whitespace-nowrap">
-                  {formatTime(entry.open)} – {formatTime(entry.close)}
+                <span className="text-ink">{entry.day}</span>
+                <span className="whitespace-nowrap text-ink-muted tabular-nums">
+                  {formatTime(entry.open)} &ndash; {formatTime(entry.close)}
                 </span>
               </li>
             ))}
           </ul>
 
-          <p className="mt-4 text-sm text-ink-muted">
+          <p className="mt-4 text-sm text-ink-muted text-pretty">
             Hours can change on public holidays. Call ahead if you are making a
             special trip.
           </p>
@@ -149,21 +164,13 @@ export default async function ContactPage() {
       )}
 
       {promotion && (
-        <p className="mt-12 rounded-2xl bg-surface-sunk px-6 py-5 text-ink-muted text-pretty">
+        <p className="label shell bg-surface-sunk py-5 text-center text-ink-muted">
           {promotion}
         </p>
       )}
 
-      {org.phone && (
-        <div className="mt-12">
-          <a
-            href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-            className="inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
-          >
-            Call {org.phone}
-          </a>
-        </div>
-      )}
-    </div>
+
+      <BookingCta phone={org.phone} />
+    </>
   );
 }

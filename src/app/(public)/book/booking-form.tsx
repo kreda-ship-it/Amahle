@@ -42,7 +42,7 @@ export function BookingForm({
       {state.status === "error" && (
         <div
           role="alert"
-          className="mt-6 rounded-xl border border-brand/40 bg-brand/5 px-5 py-4"
+          className="mt-6 border border-brand/30 bg-brand/[0.07] px-5 py-4"
         >
           <p className="font-medium text-pretty">{state.message}</p>
 
@@ -75,7 +75,7 @@ export function BookingForm({
 
                     <button
                       type="submit"
-                      className="rounded-full border border-line bg-surface px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
+                      className="border border-line bg-surface px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
                     >
                       <span className="font-medium">{alternative.time}</span>
                       <span className="ml-2 text-ink-muted">
@@ -167,7 +167,7 @@ export function BookingForm({
               id="notes"
               name="notes"
               rows={3}
-              className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 outline-none focus:border-brand"
+              className="mt-1.5 w-full border border-line bg-surface px-4 py-3 outline-none focus:border-brand"
             />
           </div>
         </div>
@@ -175,7 +175,7 @@ export function BookingForm({
         <button
           type="submit"
           disabled={pending}
-          className="mt-8 w-full rounded-full bg-brand px-6 py-3.5 font-medium text-white transition-colors hover:bg-brand-strong disabled:opacity-60 sm:w-auto"
+          className="btn mt-8 w-full bg-brand text-ink-inverse hover:bg-brand-strong disabled:opacity-60 sm:w-auto"
         >
           {pending ? "Booking…" : party > 1 ? "Book all appointments" : "Confirm booking"}
         </button>
@@ -217,7 +217,7 @@ function Field({
         type={type}
         autoComplete={autoComplete}
         required={required}
-        className="mt-1.5 w-full rounded-xl border border-line bg-surface px-4 py-2.5 outline-none focus:border-brand"
+        className="mt-1.5 w-full border border-line bg-surface px-4 py-3 outline-none focus:border-brand"
       />
 
       {hint && <p className="mt-1 text-sm text-ink-muted">{hint}</p>}

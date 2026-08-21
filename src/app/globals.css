@@ -25,45 +25,250 @@
    ------------------------------------------------------------------ */
 
 :root {
+  /*
+   * THE LIGHT VALUES — used by the staff area and the login page.
+   *
+   * Those are a tool. Somebody is in there for eight hours entering phone
+   * bookings, and a dark interface for that is a preference, not an
+   * improvement. The public site overrides every one of these; see
+   * `.theme-dark` below.
+   */
+
   /* Brand — buttons, links, anything the salon owns. */
-  --brand: #8a5a2b;
-  --brand-strong: #6d4520;
+  --brand: #8e2f20;
+  --brand-strong: #6d2317;
+
+  /* A quieter second colour, for a small link or an underline. */
+  --accent: #a8763a;
 
   /* Text. `ink` is body copy, `ink-muted` is anything secondary. */
-  --ink: #1f1a17;
-  --ink-muted: #6b5d54;
+  --ink: #171310;
+  --ink-muted: #6b6055;
 
-  /* Backgrounds. `surface` is the page, `surface-sunk` sets a section apart. */
-  --surface: #fffdfb;
-  --surface-sunk: #f6efe8;
+  /* Text sitting ON the brand colour. */
+  --ink-inverse: #fbf9f6;
 
-  /* Borders and rules. */
-  --line: #e8ded4;
+  /* Backgrounds. `surface` is the page, `surface-sunk` sets a panel apart. */
+  --surface: #fbf9f6;
+  --surface-sunk: #f1ece4;
+
+  /* The darkest band on the page — the footer. */
+  --surround: #17130f;
+
+  /* Borders and hairlines. */
+  --line: #e3dbd0;
+
+  color-scheme: light;
+}
+
+/* ------------------------------------------------------------------
+   THE PUBLIC SITE'S PALETTE.
+
+   Warm near-black, with amber for anything you can act on. Not grey —
+   every neutral here has yellow and red left in it, which is the whole
+   difference between a page that feels like a lit room and one that
+   feels like a switched-off television.
+
+   Applied as a class on one element in the public layout, not on
+   `:root`. That is what keeps the staff area light while the shopfront
+   is dark: CSS variables inherit, so redefining them on a container
+   changes everything inside it and nothing outside it.
+
+   It is also the mechanism a second salon will use. When these values
+   come from `organizations.public_settings`, they are written into a
+   style attribute on this same element, and the whole site changes
+   colour without a single component being edited.
+   ------------------------------------------------------------------ */
+
+.theme-dark {
+  /*
+   * The gold is sampled from the logo itself, not chosen by eye.
+   * Decoding the artwork and counting its brightest pixels gives a
+   * cluster around #f0d050 and #f0c040 — so that is what the site uses.
+   *
+   * The muted antique gold that was here before was the more tasteful
+   * choice and the wrong one: it sat so close to the background that it
+   * stopped reading as gold at all. This is bright enough to be the
+   * first thing you see, and it matches the sign above the door.
+   */
+  --brand: #eec449;
+  --brand-strong: #d4a92f;
 
   /*
-   * The public site is deliberately light in both system settings. A salon's
-   * brand colours are chosen against paper and daylight, and inverting them
-   * automatically produces something nobody approved. This also keeps native
-   * form controls light, which is what `color-scheme` controls.
+   * Terracotta, for a panel or a large heading that needs to sit apart
+   * from the gold. Deliberately never used for small text — against
+   * this background it does not have the contrast for it.
    */
-  color-scheme: light;
+  --accent: #b8563c;
+
+  /* Warm off-white. Pure white against a warm black looks like a hole. */
+  --ink: #f4efe7;
+  --ink-muted: #a1958a;
+
+  /* Text sitting ON gold — near-black, never white. */
+  --ink-inverse: #100d0b;
+
+  --surface: #100d0b;
+  --surface-sunk: #191512;
+
+  /* Darker still, for the footer. */
+  --surround: #0a0806;
+
+  /*
+   * Hairlines, and they should be hair-thin in feel as well as in
+   * width — barely a shade above the background. A visible grey rule on
+   * a dark page reads as a wireframe.
+   */
+  --line: #2a2320;
+
+  /*
+   * Tells the browser this region is dark, which is what makes native
+   * date pickers, dropdowns and scrollbars inside the booking form come
+   * out dark too instead of flashing white.
+   */
+  color-scheme: dark;
+
+  background: var(--surface);
+  color: var(--ink);
 }
 
 @theme inline {
   --color-brand: var(--brand);
   --color-brand-strong: var(--brand-strong);
+  --color-accent: var(--accent);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
+  --color-ink-inverse: var(--ink-inverse);
   --color-surface: var(--surface);
   --color-surface-sunk: var(--surface-sunk);
+  --color-surround: var(--surround);
   --color-line: var(--line);
 
   --font-sans: var(--font-geist-sans);
-  --font-display: var(--font-fraunces);
+  --font-display: var(--font-cormorant);
 }
 
 body {
   background: var(--surface);
   color: var(--ink);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* ------------------------------------------------------------------
+   Three utilities the public site uses on nearly every section.
+
+   `@utility` is Tailwind v4's way of adding a class name that behaves
+   like a built-in one — it can be combined with variants (`sm:label`)
+   and it is dropped from the build if nothing uses it. Written here
+   rather than repeated as a string of six utilities in forty places,
+   because the day one of them changes it should change once.
+   ------------------------------------------------------------------ */
+
+/*
+ * THE MARGIN RULE. Every band of content on the public site is wrapped
+ * in this and nothing else, which is what keeps a heading, the row of
+ * prices under it and the photograph under that all starting on the
+ * same vertical line.
+ *
+ * Getting this wrong is the most common way a site looks amateur, and
+ * it is invisible in a screenshot of any single section — it only shows
+ * when you scroll and things shuffle left and right underneath you.
+ *
+ * The width climbs with the screen instead of stopping dead: comfortable
+ * on a laptop, and a large monitor gets more site rather than more empty
+ * grey either side.
+ */
+@utility shell {
+  margin-inline: auto;
+  width: 100%;
+
+  /*
+   * 1760px. A cap has to exist — a line of text the full width of a 27-inch
+   * monitor is physically hard to read, because the eye loses its place on
+   * the way back to the start of the next line. But the old cap was 1408px,
+   * which left a 1920-wide screen with 250px of dead background either side
+   * and made the site look like it was hiding in the middle.
+   */
+  max-width: 110rem;
+  padding-inline: 1.25rem;
+
+  @media (width >= 40rem) {
+    padding-inline: 2rem;
+  }
+
+  @media (width >= 64rem) {
+    padding-inline: 3rem;
+  }
+
+  @media (width >= 96rem) {
+    padding-inline: 4.5rem;
+  }
+}
+
+/*
+ * The small letterspaced capitals that name a section. Wide spacing is
+ * what stops capitals at this size reading as a shout; it is the oldest
+ * trick in printed signage.
+ */
+@utility label {
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+/* The same idea one step larger, for a heading that stands alone. */
+@utility label-lg {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+/*
+ * Anything you can press. Rectangular, generously padded, and set in
+ * letterspaced capitals rather than sentence case.
+ *
+ * Not a pill. A rounded button beside a Garamond headline is two
+ * different centuries in the same sentence — pills belong with the
+ * heavy geometric sans this design used to have.
+ */
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.125rem 2.25rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 400;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+/*
+ * How gold-on-black artwork sits on a dark page with no visible edge.
+ *
+ * The logo is a photograph of gold on a black square. Dropped onto the
+ * page as-is you see the square, because its black and the page's warm
+ * near-black are not the same colour.
+ *
+ * `screen` is a blend mode that works like shining two projectors at
+ * one wall: the result is always at least as bright as either layer,
+ * and screening with black changes nothing at all. So every black pixel
+ * in the file disappears exactly into whatever is behind it, and only
+ * the gold survives. No cut-out, no transparency, no halo along the
+ * edges where the JPEG was compressed — and it keeps working if the
+ * background colour ever changes.
+ *
+ * It only works over a DARK background. On white it would wash out to
+ * nothing, which is fine: the public site is dark by design.
+ */
+@utility blend-gold {
+  mix-blend-mode: screen;
 }

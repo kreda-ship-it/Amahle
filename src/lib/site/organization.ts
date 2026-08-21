@@ -73,6 +73,17 @@ export type SiteContent = {
   social: SocialLinks;
 
   /*
+   * Three or four very short facts about coming here — "Parking in back",
+   * "Cash for braids", "Walk-ins welcome". Printed in a row under the booking
+   * button on the homepage.
+   *
+   * They are the questions a salon answers on the phone twenty times a week,
+   * and answering them on the page is the cheapest call the salon will ever
+   * avoid. An empty list is normal and prints nothing at all.
+   */
+  highlights: string[];
+
+  /*
    * Image PATHS, not addresses — `<org_id>/hero/shopfront.jpg`. Pass them
    * through `imageUrl()` from ./images to get something a browser can fetch.
    *
@@ -137,6 +148,23 @@ function asHours(value: Json | undefined): OpeningHours[] {
   });
 }
 
+/**
+ * A list of short strings, with anything that is not a string dropped.
+ *
+ * Capped at four. Not because five would break the layout, but because the
+ * value of this row is that somebody reads all of it at a glance, and a list
+ * of nine facts is a list nobody reads.
+ */
+function asHighlights(value: Json | undefined): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((entry) => {
+    const text = asText(entry);
+
+    return text ? [text] : [];
+  }).slice(0, 4);
+}
+
 function asSocial(value: Json | undefined): SocialLinks {
   const row = asRecord(value);
 
@@ -159,6 +187,7 @@ function readContent(value: Json | null): SiteContent {
     textNumber: asText(row.text_number),
     hours: asHours(row.hours),
     social: asSocial(row.social),
+    highlights: asHighlights(row.highlights),
     heroImagePath: asText(row.hero_image),
     heroImageAlt: asText(row.hero_image_alt),
     logoPath: asText(row.logo),

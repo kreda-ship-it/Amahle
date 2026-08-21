@@ -51,13 +51,19 @@ export default async function OpengraphImage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          backgroundColor: "#fffdfb",
+          backgroundColor: "#f4efe4",
           padding: "72px",
           // Satori has no default font stack the way a browser does. Naming
           // the family Next bundles keeps the text from falling back to
           // something that renders as empty boxes.
           fontFamily: "sans-serif",
-          color: "#1f1a17",
+          /*
+           * The only place in the codebase where the palette is written down
+           * twice. Satori renders this card without a stylesheet, so it
+           * cannot read the variables in globals.css — these four hex values
+           * have to be kept in step with that file by hand.
+           */
+          color: "#191512",
         }}
       >
         {/* A bar of the brand colour, so the card is recognisable at
@@ -67,8 +73,7 @@ export default async function OpengraphImage() {
             display: "flex",
             width: "120px",
             height: "10px",
-            backgroundColor: "#8a5a2b",
-            borderRadius: "999px",
+            backgroundColor: "#8e2f20",
           }}
         />
 
@@ -90,7 +95,7 @@ export default async function OpengraphImage() {
                 marginTop: "24px",
                 fontSize: 32,
                 lineHeight: 1.35,
-                color: "#6b5d54",
+                color: "#6d6153",
                 // Satori does not implement line clamping, so a salon with a
                 // very long tagline would push the layout. Cut it here.
                 display: "flex",
@@ -106,7 +111,7 @@ export default async function OpengraphImage() {
             display: "flex",
             gap: "24px",
             fontSize: 26,
-            color: "#6b5d54",
+            color: "#6d6153",
           }}
         >
           {org.phone && <div style={{ display: "flex" }}>{org.phone}</div>}

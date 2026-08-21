@@ -5,6 +5,10 @@ import { imageUrl } from "@/lib/site/images";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+import { BookingCta } from "../booking-cta";
+import { PhoneLink } from "../phone-link";
+import { PageHeading } from "../page-heading";
+
 /**
  * The team page.
  *
@@ -28,7 +32,7 @@ type Employee = {
 };
 
 /**
- * "Selam Tesfaye" becomes "ST", for the circle shown when someone has no
+ * "Selam Tesfaye" becomes "ST", for the block shown when someone has no
  * photograph. First and last word only, so a middle name does not produce
  * three letters and a double-barrelled surname still gives two.
  */
@@ -113,23 +117,20 @@ export default async function TeamPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-5 py-16">
-      <h1 className="font-display text-4xl font-semibold sm:text-5xl">
-        Our Team
-      </h1>
-
-      <p className="mt-4 max-w-2xl text-lg text-ink-muted text-pretty">
-        The people who look after you. Ask for someone by name when you call,
-        or let us match you with whoever is free.
-      </p>
+    <>
+      <PageHeading
+        eyebrow="Team"
+        title="The people who look after you"
+        intro="Ask for someone by name when you call, or let us match you with whoever is free."
+      />
 
       {failed || employees.length === 0 ? (
-        <p className="mt-12 text-ink-muted">
+        <p className="shell py-12 text-ink-muted">
           Our team page is briefly unavailable. Please call{" "}
-          {org.phone ?? "the salon"} — we are still here.
+          <PhoneLink phone={org.phone} /> — we are still here.
         </p>
       ) : (
-        <ul className="mt-12 grid gap-10 sm:grid-cols-2">
+        <ul className="shell grid grid-cols-2 gap-x-5 gap-y-10 py-10 sm:grid-cols-3 lg:grid-cols-5">
           {employees.map((employee) => {
             const photo = imageUrl(employee.photo_path);
             const categories = [
@@ -137,79 +138,74 @@ export default async function TeamPage() {
             ];
 
             return (
-              <li key={employee.id} className="flex gap-5">
+              <li key={employee.id}>
                 {photo ? (
                   <Image
                     src={photo}
                     alt={employee.full_name}
-                    width={96}
-                    height={96}
-                    className="size-20 shrink-0 rounded-full object-cover sm:size-24"
+                    width={400}
+                    height={480}
+                    sizes="(min-width: 640px) 280px, 45vw"
+                    className="aspect-5/6 w-full bg-surface-sunk object-cover"
                   />
                 ) : (
                   /*
                    * No photograph is an ordinary state, not a fault — several
-                   * of these people may never sit for one. Initials in a
-                   * circle keep the layout identical to a card that has a
-                   * photo, so the page does not lurch when one is added.
+                   * of these people may never sit for one. Initials in a block
+                   * of exactly the same proportions keep the row from lurching
+                   * on the day a photograph is added.
                    *
-                   * aria-hidden because the name is written immediately
-                   * beside it: a screen reader announcing "S T Selam Tesfaye"
-                   * is noise.
+                   * There is no stand-in photograph here, unlike the hero and
+                   * the gallery. A stock picture of a stranger printed under a
+                   * real employee's name is a lie about a real person, and no
+                   * design preview is worth that.
+                   *
+                   * aria-hidden because the name is written immediately below:
+                   * a screen reader announcing "S T Selam Tesfaye" is noise.
                    */
                   <div
                     aria-hidden
-                    className="flex size-20 shrink-0 items-center justify-center rounded-full bg-surface-sunk font-display text-xl font-semibold text-brand sm:size-24"
+                    className="flex aspect-5/6 w-full items-center justify-center border border-line bg-surface-sunk font-display text-3xl font-light text-ink-muted sm:text-4xl"
                   >
                     {initials(employee.full_name)}
                   </div>
                 )}
 
-                <div className="min-w-0">
-                  <h2 className="font-display text-xl font-semibold">
-                    {employee.full_name}
-                  </h2>
+                <h2 className="mt-3 font-display text-xl leading-tight font-normal font-semibold sm:text-xl">
+                  {employee.full_name}
+                </h2>
 
-                  {employee.position && (
-                    <p className="mt-0.5 text-sm font-medium text-brand">
-                      {employee.position}
-                    </p>
-                  )}
+                {employee.position && (
+                  <p className="label mt-1 text-ink-muted">
+                    {employee.position}
+                  </p>
+                )}
 
-                  {employee.bio && (
-                    <p className="mt-2 text-ink-muted text-pretty">
-                      {employee.bio}
-                    </p>
-                  )}
+                {employee.bio && (
+                  <p className="mt-2 text-sm leading-relaxed text-ink-muted text-pretty">
+                    {employee.bio}
+                  </p>
+                )}
 
-                  {/*
-                    An employee with no services is a legitimate state, not
-                    missing data — a receptionist is part of the team and
-                    performs none. So this line simply does not render for
-                    them, rather than printing an empty label.
-                  */}
-                  {categories.length > 0 && (
-                    <p className="mt-3 text-sm text-ink-muted">
-                      {categories.join(" · ")}
-                    </p>
-                  )}
-                </div>
+                {/*
+                  An employee with no services is a legitimate state, not
+                  missing data — a receptionist is part of the team and
+                  performs none. So this line simply does not render for them,
+                  rather than printing an empty label.
+                */}
+                {categories.length > 0 && (
+                  <p className="label mt-2 border-t border-line pt-2 text-ink-muted">
+                    {categories.join(" · ")}
+                  </p>
+                )}
               </li>
             );
           })}
         </ul>
       )}
 
-      {org.phone && (
-        <div className="mt-14">
-          <a
-            href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-            className="inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
-          >
-            Call {org.phone}
-          </a>
-        </div>
-      )}
-    </div>
+
+      <BookingCta phone={org.phone} />
+    </>
   );
 }

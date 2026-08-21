@@ -47,3 +47,21 @@ export function siteUrl(): URL {
 export function absoluteUrl(path: string): string {
   return new URL(path, siteUrl()).toString();
 }
+
+/**
+ * A link that opens this address in whatever map app the visitor uses.
+ *
+ * Google's universal search URL rather than `maps://` or an Apple Maps link.
+ * On an iPhone this hands off to the Maps or Google Maps app if either is
+ * installed and falls back to the browser if neither is; on Android it opens
+ * Google Maps; on a desktop it opens a map in a tab. One address that works
+ * everywhere beats sniffing the visitor's device and guessing wrong.
+ *
+ * A search rather than a pinned coordinate, deliberately. This address pairs a
+ * Washington DC street with a Maryland ZIP — see SESSION_LOG, 2026-08-15 — and
+ * a search is honest about being a best guess where a dropped pin would look
+ * authoritative and send somebody to the wrong door.
+ */
+export function mapsHref(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}

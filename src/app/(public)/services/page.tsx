@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
+import Image from "next/image";
+import Link from "next/link";
 
 import { getOrganization } from "@/lib/site/organization";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
+import { stockStylePhoto } from "@/lib/site/stock-photos";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+import { BookingCta } from "../booking-cta";
+import { PhoneLink } from "../phone-link";
+import { PageHeading } from "../page-heading";
 
 /**
  * The services and pricing page.
@@ -10,6 +17,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * The whole menu, grouped into the categories the salon chose, in the order it
  * chose. Nothing here is written down in code — add a service in the database
  * and it appears; change its category and it moves.
+ *
+ * Laid out as a printed price list: a number, a name, what it involves, and
+ * the money in a column down the right-hand edge. Somebody on this page is
+ * running their eye down that column, so the column is what the layout is
+ * built around.
  */
 
 export const metadata: Metadata = {
@@ -70,112 +82,160 @@ export default async function ServicesPage() {
   const hasCallOnly = services.some((service) => !service.is_bookable_online);
 
   return (
-    <div className="mx-auto max-w-3xl px-5 py-16">
-      <h1 className="font-display text-4xl font-semibold sm:text-5xl">
-        Services &amp; Pricing
-      </h1>
-
-      <p className="mt-4 text-lg text-ink-muted text-pretty">
-        Prices marked &ldquo;from&rdquo; depend on your hair&rsquo;s length and
-        condition. If you are not sure which service you need, call us and we
-        will talk it through.
-      </p>
+    <>
+      <PageHeading
+        eyebrow="Services"
+        title="Everything we do, and what it costs"
+        intro={
+          'Prices marked "from" depend on your hair’s length and condition. ' +
+          "If you are not sure which service you need, call us and we will talk " +
+          "it through."
+        }
+      />
 
       {error ? (
-        <p className="mt-12 text-ink-muted">
+        <p className="shell py-12 text-ink-muted">
           Our price list is briefly unavailable. Please call{" "}
-          {org.phone ?? "the salon"} and we will talk it through.
+          <PhoneLink phone={org.phone} /> and we will talk it through.
         </p>
       ) : services.length === 0 ? (
-        <p className="mt-12 text-ink-muted">
+        <p className="shell py-12 text-ink-muted">
           Our price list is being updated. Please call{" "}
-          {org.phone ?? "the salon"} in the meantime.
+          <PhoneLink phone={org.phone} /> in the meantime.
         </p>
       ) : (
-        <div className="mt-12 space-y-14">
-          {[...categories].map(([category, categoryServices]) => (
-            <section key={category}>
-              <h2 className="font-display text-2xl font-semibold">
-                {category}
-              </h2>
+        [...categories].map(([category, categoryServices]) => (
+          <section key={category} className="shell pt-14">
+            <div className="label flex items-baseline justify-between border-b border-brand/30 pb-3 text-ink">
+              <h2>{category}</h2>
+              <span className="text-ink-muted">From</span>
+            </div>
 
-              <ul className="mt-5 divide-y divide-line border-t border-line">
-                {categoryServices.map((service) => {
-                  const price = formatPrice(
-                    service.price,
-                    service.price_display,
-                    org.currency,
-                  );
-                  const duration = formatDuration(service.duration_minutes);
+            <ul className="divide-y divide-line">
+              {categoryServices.map((service, index) => {
+                const price = formatPrice(
+                  service.price,
+                  service.price_display,
+                  org.currency,
+                );
+                const duration = formatDuration(service.duration_minutes);
+                const thumbnail = stockStylePhoto(service.name);
 
-                  return (
-                    <li
-                      key={service.id}
-                      className="flex flex-wrap justify-between gap-x-6 gap-y-2 py-5"
-                    >
-                      <div className="min-w-56 flex-1">
-                        <h3 className="font-medium">{service.name}</h3>
+                const inner = (
+                  <>
+                    {/*
+                      Numbered within its own category rather than straight
+                      through all twenty-four. The number is there to help
+                      somebody say "the third one down under braids" on the
+                      phone, and a run from 1 to 24 does not help with that.
+                    */}
+                    <span className="label w-5 shrink-0 pt-1 text-ink-muted tabular-nums">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
 
-                        {service.description && (
-                          <p className="mt-1 text-sm text-ink-muted text-pretty">
-                            {service.description}
-                          </p>
-                        )}
+                    {/*
+                      Empty alt, on purpose. The photograph is a stand-in
+                      chosen by the code, not a picture of this service, and
+                      describing it to somebody who cannot see it would be
+                      describing a decision we made rather than the salon's
+                      work. An empty alt tells a screen reader to skip it.
+                    */}
+                    <Image
+                      src={thumbnail.url}
+                      alt=""
+                      width={64}
+                      height={64}
+                      className="size-14 shrink-0 bg-surface-sunk object-cover sm:size-16"
+                    />
 
-                        {/*
-                          DECISIONS #23: a service that cannot be booked online
-                          still appears on the price list. is_bookable_online
-                          controls the Book button, not visibility.
-                        */}
-                        {!service.is_bookable_online && (
-                          <p className="mt-2 text-sm font-medium text-brand">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-display text-xl leading-tight font-normal transition-colors group-hover:text-brand sm:text-2xl">
+                        {service.name}
+                      </h3>
+
+                      <p className="label mt-1 text-ink-muted">{duration}</p>
+
+                      {service.description && (
+                        <p className="mt-2 text-sm leading-relaxed text-ink-muted text-pretty">
+                          {service.description}
+                        </p>
+                      )}
+
+                      {/*
+                        DECISIONS #23: a service that cannot be booked online
+                        still appears on the price list. is_bookable_online
+                        controls the Book button, not visibility.
+
+                        The phone number is the link here rather than the row,
+                        because a link inside a link is not valid HTML and
+                        browsers resolve it by guessing.
+                      */}
+                      {!service.is_bookable_online &&
+                        (org.phone ? (
+                          <a
+                            href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
+                            className="label mt-2 inline-block border-b border-brand pb-0.5 text-brand transition-colors hover:border-brand-strong hover:text-brand-strong"
+                          >
+                            Please call to book
+                          </a>
+                        ) : (
+                          <p className="label mt-2 text-brand">
                             Please call to book
                           </p>
-                        )}
-                      </div>
+                        ))}
+                    </div>
 
-                      <div className="text-right">
-                        {/*
-                          A 'hidden' price prints an invitation rather than a
-                          number. The number still exists in the database and
-                          the salon knows it — this is a presentation choice.
-                        */}
-                        <p className="font-medium whitespace-nowrap">
-                          {price ?? "Call for a price"}
-                        </p>
+                    {/*
+                      A 'hidden' price prints an invitation rather than a
+                      number. The number still exists in the database and the
+                      salon knows it — this is a presentation choice.
+                    */}
+                    <div className="shrink-0 pt-0.5 text-right">
+                      <span className="font-display text-2xl font-normal whitespace-nowrap tabular-nums sm:text-3xl">
+                        {price ?? <span className="label">Ask</span>}
+                      </span>
+                    </div>
+                  </>
+                );
 
-                        {duration && (
-                          <p className="mt-1 text-sm text-ink-muted whitespace-nowrap">
-                            {duration}
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))}
-        </div>
+                /*
+                 * A bookable service is one tap from a time. `s0` is the
+                 * booking page's own parameter for "person 0 wants these
+                 * services", so this lands on the time picker with the
+                 * service already chosen rather than on the menu again.
+                 *
+                 * A call-only service is not a link at all — the phone
+                 * number inside it is.
+                 */
+                return (
+                  <li key={service.id}>
+                    {service.is_bookable_online ? (
+                      <Link
+                        href={`/book?s0=${service.id}`}
+                        className="group flex items-start gap-4 py-5"
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div className="flex items-start gap-4 py-5">{inner}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))
       )}
 
       {hasCallOnly && (
-        <p className="mt-14 rounded-2xl bg-surface-sunk px-6 py-5 text-sm text-ink-muted text-pretty">
+        <p className="shell mt-10 py-5 text-sm text-ink-muted text-pretty">
           Some of our longer braiding services are booked by phone rather than
           online, so we can plan the day with you before you come in.
         </p>
       )}
 
-      {org.phone && (
-        <div className="mt-10">
-          <a
-            href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-            className="inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
-          >
-            Call {org.phone}
-          </a>
-        </div>
-      )}
-    </div>
+
+      <BookingCta phone={org.phone} />
+    </>
   );
 }

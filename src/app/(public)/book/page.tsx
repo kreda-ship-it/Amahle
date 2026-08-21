@@ -20,6 +20,7 @@ import {
 import { getOrganization } from "@/lib/site/organization";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
 
+import { PhoneLink } from "../phone-link";
 import { chooseTime } from "./actions";
 import { BookingForm, type PersonSummary } from "./booking-form";
 
@@ -98,6 +99,7 @@ export default async function BookPage({
       <ChooseService
         orgId={org.id}
         currency={org.currency}
+        phone={org.phone}
         already={chosenServices}
         party={party}
         person={person}
@@ -190,7 +192,7 @@ export default async function BookPage({
 
   return (
     <Shell>
-      <h1 className="font-display text-3xl font-semibold sm:text-4xl">
+      <h1 className="font-display text-4xl font-light sm:text-4xl">
         Book an appointment
       </h1>
 
@@ -204,14 +206,14 @@ export default async function BookPage({
       {params.problem && (
         <p
           role="alert"
-          className="mt-6 rounded-xl border border-brand/40 bg-brand/5 px-5 py-4 text-pretty"
+          className="mt-6 border border-brand/30 bg-brand/[0.07] px-5 py-4 text-pretty"
         >
           {params.problem}
         </p>
       )}
 
-      <section className="mt-8 rounded-2xl bg-surface-sunk px-6 py-5">
-        <h2 className="font-display text-lg font-semibold">
+      <section className="mt-8 bg-surface-sunk px-6 py-5">
+        <h2 className="font-display text-lg font-normal">
           This visit{who}
         </h2>
 
@@ -265,7 +267,7 @@ export default async function BookPage({
 
       {employees.length > 1 && (
         <section className="mt-10">
-          <h2 className="font-display text-xl font-semibold">
+          <h2 className="font-display text-2xl font-normal">
             Who would you like?
           </h2>
 
@@ -291,7 +293,7 @@ export default async function BookPage({
       )}
 
       {employees.length === 0 && (
-        <p className="mt-10 rounded-2xl bg-surface-sunk px-6 py-5 text-pretty">
+        <p className="mt-10 bg-surface-sunk px-6 py-5 text-pretty">
           Nobody on the team does all of those together. Try removing one, or
           call us and we will arrange it between two of us.
         </p>
@@ -300,7 +302,7 @@ export default async function BookPage({
       {employees.length > 0 && (
         <>
           <section className="mt-10">
-            <h2 className="font-display text-xl font-semibold">Pick a day</h2>
+            <h2 className="font-display text-2xl font-normal">Pick a day</h2>
 
             <div className="mt-4 flex flex-wrap gap-2">
               {days.map((day) =>
@@ -315,7 +317,7 @@ export default async function BookPage({
                 ) : (
                   <span
                     key={day}
-                    className="rounded-full border border-line px-4 py-2 text-sm text-ink-muted opacity-50"
+                    className="border border-line px-4 py-2 text-sm text-ink-muted opacity-50"
                     title="Nothing free"
                   >
                     {salonDayLabel(day)}
@@ -326,7 +328,7 @@ export default async function BookPage({
           </section>
 
           <section className="mt-10">
-            <h2 className="font-display text-xl font-semibold">
+            <h2 className="font-display text-2xl font-normal">
               {selectedDay ? salonDayLabelLong(selectedDay) : "Available times"}
             </h2>
 
@@ -389,8 +391,8 @@ export default async function BookPage({
                         type="submit"
                         className={
                           chosen
-                            ? "rounded-full border border-brand bg-brand px-4 py-2 text-sm text-white"
-                            : "rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
+                            ? "border border-brand bg-brand px-4 py-2 text-sm text-ink-inverse tabular-nums"
+                            : "border border-line px-4 py-2 text-sm tabular-nums transition-colors hover:border-brand hover:text-brand"
                         }
                       >
                         <span className="font-medium">
@@ -432,7 +434,7 @@ export default async function BookPage({
 
       {/* Held, and there is somebody else still to choose. */}
       {mine && !everyoneHeld && (
-        <section className="mt-10 rounded-2xl border border-line px-6 py-5">
+        <section className="mt-10 border border-line px-6 py-5">
           <p className="text-pretty">
             Held until {salonTime(mine.expiresAt, org.timezone)}. Now choose for
             the next person.
@@ -440,7 +442,7 @@ export default async function BookPage({
 
           <Link
             href={href({ p: String(nextUnheld(party, heldBy)), date: undefined })}
-            className="mt-4 inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
+            className="mt-4 btn bg-brand text-ink-inverse hover:bg-brand-strong"
           >
             Next person
           </Link>
@@ -507,8 +509,8 @@ async function PartyDetails({
   );
 
   return (
-    <section className="mt-10 rounded-2xl border border-line px-6 py-5">
-      <h2 className="font-display text-xl font-semibold">Your details</h2>
+    <section className="mt-10 border border-line px-6 py-5">
+      <h2 className="font-display text-2xl font-normal">Your details</h2>
 
       <BookingForm
         people={people}
@@ -521,7 +523,7 @@ async function PartyDetails({
 function ChooseParty() {
   return (
     <Shell>
-      <h1 className="font-display text-3xl font-semibold sm:text-4xl">
+      <h1 className="font-display text-4xl font-light sm:text-4xl">
         Book an appointment
       </h1>
 
@@ -535,7 +537,7 @@ function ChooseParty() {
             <Link
               key={size}
               href={`/book?party=${size}`}
-              className="rounded-full border border-line px-6 py-3 font-medium transition-colors hover:border-brand hover:text-brand"
+              className="border border-line px-6 py-3 font-medium transition-colors hover:border-brand hover:text-brand"
             >
               {size === 1 ? "Just me" : `${size} people`}
             </Link>
@@ -543,7 +545,7 @@ function ChooseParty() {
         )}
       </div>
 
-      <p className="mt-10 rounded-2xl bg-surface-sunk px-6 py-5 text-sm text-ink-muted text-pretty">
+      <p className="mt-10 bg-surface-sunk px-6 py-5 text-sm text-ink-muted text-pretty">
         More than four, or something complicated? Give us a ring and we will
         plan it with you.
       </p>
@@ -554,6 +556,7 @@ function ChooseParty() {
 async function ChooseService({
   orgId,
   currency,
+  phone,
   already,
   party,
   person,
@@ -561,6 +564,7 @@ async function ChooseService({
 }: {
   orgId: string;
   currency: string;
+  phone: string | null;
   already: BookableService[];
   party: number;
   person: number;
@@ -623,7 +627,7 @@ async function ChooseService({
 
   return (
     <Shell>
-      <h1 className="font-display text-3xl font-semibold sm:text-4xl">
+      <h1 className="font-display text-4xl font-light sm:text-4xl">
         {adding ? "Add another service" : "What would you like?"}
       </h1>
 
@@ -666,13 +670,14 @@ async function ChooseService({
 
       {services.length === 0 ? (
         <p className="mt-10 text-ink-muted">
-          Online booking is briefly unavailable. Please call us.
+          Online booking is briefly unavailable. Please call{" "}
+          <PhoneLink phone={phone} />.
         </p>
       ) : (
         showing.map((category) => (
           <section key={category} className="mt-10">
             {!chosenCategory && categories.length > 1 && (
-              <h2 className="font-display text-xl font-semibold">{category}</h2>
+              <h2 className="font-display text-2xl font-normal">{category}</h2>
             )}
 
             <ul className="mt-4 divide-y divide-line border-t border-line">
@@ -727,7 +732,7 @@ async function ChooseService({
       )}
 
       {/* DECISIONS #23 — the price list is longer than this list, on purpose. */}
-      <p className="mt-12 rounded-2xl bg-surface-sunk px-6 py-5 text-sm text-ink-muted text-pretty">
+      <p className="mt-12 bg-surface-sunk px-6 py-5 text-sm text-ink-muted text-pretty">
         Our longer braiding appointments are booked by phone rather than online,
         so we can plan the day with you first. They are all on the{" "}
         <Link
@@ -777,7 +782,16 @@ function nextUnheld(party: number, heldBy: Map<number, unknown>): number {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="mx-auto max-w-3xl px-5 py-16">{children}</div>;
+  return (
+    <div className="shell py-14">
+      {/*
+        The site margin, and then a narrower column inside it. A form field
+        the full width of a large monitor is unusable — the eye loses the
+        line between the label and the box.
+      */}
+      <div className="max-w-3xl">{children}</div>
+    </div>
+  );
 }
 
 function Chip({
@@ -794,8 +808,8 @@ function Chip({
       href={href}
       className={
         active
-          ? "rounded-full border border-brand bg-brand px-4 py-2 text-sm text-white"
-          : "rounded-full border border-line px-4 py-2 text-sm transition-colors hover:border-brand hover:text-brand"
+          ? "border border-brand bg-brand px-4 py-2 text-sm text-ink-inverse tabular-nums"
+          : "border border-line px-4 py-2 text-sm tabular-nums transition-colors hover:border-brand hover:text-brand"
       }
     >
       {children}

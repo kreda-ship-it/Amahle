@@ -46,8 +46,10 @@ export default async function ConfirmedPage({
 
   if (!booking) {
     return (
-      <div className="mx-auto max-w-2xl px-5 py-16">
-        <h1 className="font-display text-3xl font-semibold">
+      <div className="shell py-16">
+      {/* The site margin, then a readable column inside it. */}
+      <div className="max-w-2xl">
+        <h1 className="font-display text-4xl font-light">
           We can&rsquo;t find that booking
         </h1>
 
@@ -59,11 +61,12 @@ export default async function ConfirmedPage({
         {org.phone && (
           <a
             href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-            className="mt-8 inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
+            className="mt-8 btn bg-brand text-ink-inverse hover:bg-brand-strong"
           >
             Call {org.phone}
           </a>
         )}
+        </div>
       </div>
     );
   }
@@ -78,10 +81,12 @@ export default async function ConfirmedPage({
   const to = salonTime(booking.endsAt, org.timezone);
 
   return (
-    <div className="mx-auto max-w-2xl px-5 py-16">
+    <div className="shell py-16">
+      {/* The site margin, then a readable column inside it. */}
+      <div className="max-w-2xl">
       {cancelled ? (
         <>
-          <h1 className="font-display text-3xl font-semibold sm:text-4xl">
+          <h1 className="font-display text-4xl font-light sm:text-4xl">
             This appointment was cancelled
           </h1>
 
@@ -91,7 +96,7 @@ export default async function ConfirmedPage({
         </>
       ) : (
         <>
-          <h1 className="font-display text-3xl font-semibold sm:text-4xl">
+          <h1 className="font-display text-4xl font-light sm:text-4xl">
             You&rsquo;re booked
           </h1>
 
@@ -140,7 +145,7 @@ export default async function ConfirmedPage({
         is what someone cancelling usually wants anyway.
       */}
       {!cancelled && org.phone && (
-        <div className="mt-10 rounded-2xl bg-surface-sunk px-6 py-5">
+        <div className="mt-10 bg-surface-sunk px-6 py-5">
           <h2 className="font-medium">Need to change or cancel?</h2>
 
           <p className="mt-1 text-sm text-ink-muted text-pretty">
@@ -149,7 +154,7 @@ export default async function ConfirmedPage({
 
           <a
             href={`tel:${org.phone.replace(/[^\d+]/g, "")}`}
-            className="mt-4 inline-block rounded-full bg-brand px-6 py-3 font-medium text-white transition-colors hover:bg-brand-strong"
+            className="mt-4 btn bg-brand text-ink-inverse hover:bg-brand-strong"
           >
             Call {org.phone}
           </a>
@@ -176,6 +181,7 @@ export default async function ConfirmedPage({
       >
         Book something else
       </Link>
+      </div>
     </div>
   );
 }
