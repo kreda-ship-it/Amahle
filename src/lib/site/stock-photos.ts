@@ -42,25 +42,6 @@ function sized(id: string, width: number): string {
 }
 
 /**
- * The salon's logo.
- *
- * Read from `public_settings.logo` first, exactly like every other image.
- * This is only what the site falls back to while the file is sitting in
- * /public rather than in Supabase Storage — put it in the bucket, record the
- * path on the organization, and this stops being reached without any page
- * being edited.
- *
- * Gold on black, and rendered with `blend-gold` so the black disappears into
- * the page. See the note on that utility in globals.css.
- */
-export function stockLogo(): StockPhoto {
-  return {
-    url: "/brand/kedus-hair-salon.png",
-    alt: "Kedus Hair Salon and Braiding",
-  };
-}
-
-/**
  * The wide photograph that runs edge to edge under the hero.
  *
  * Landscape, and that is the whole requirement. The frame is twice as wide as

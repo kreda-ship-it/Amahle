@@ -3,7 +3,6 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { imageUrl } from "@/lib/site/images";
-import { stockLogo } from "@/lib/site/stock-photos";
 import { getOrganization } from "@/lib/site/organization";
 import { salonStructuredData } from "@/lib/site/structured-data";
 import { mapsHref, siteUrl } from "@/lib/site/url";
@@ -119,16 +118,7 @@ export default async function PublicLayout({
 }) {
   const org = await getOrganization();
   const { social } = org.content;
-  /*
-   * The salon's own logo if it has uploaded one, and the file in /public
-   * until it does. Same pattern as every other image on the site: the
-   * database is asked first, and the fallback disappears on its own the day
-   * there is something to find.
-   */
-  const uploadedLogo = imageUrl(org.content.logoPath);
-  const fallbackLogo = stockLogo();
-  const logo = uploadedLogo ?? fallbackLogo.url;
-  const logoAlt = uploadedLogo ? org.name : fallbackLogo.alt;
+  const logo = imageUrl(org.content.logoPath);
   const town = townOf(org.address);
 
   const socialLinks = [
@@ -200,18 +190,29 @@ export default async function PublicLayout({
           */}
           <Link href="/" className="flex min-w-0 items-center gap-4">
             {/*
-              `blend-gold` is what makes the logo's black square vanish into
-              the bar behind it — see the note on the utility in globals.css.
-              Without it there is a visible rectangle around the artwork.
+              A logo when the salon has one, its name set in type when it does
+              not. The alt text is the salon's name either way — a logo's job
+              is to say who this is, so that is what somebody using a screen
+              reader needs to hear. Never "logo".
+
+              `blend-gold` is what makes gold-on-black artwork sit on the bar
+              with no visible rectangle around it — see the note on the
+              utility in globals.css.
             */}
-            <Image
-              src={logo}
-              alt={logoAlt}
-              width={1164}
-              height={824}
-              priority
-              className="blend-gold h-12 w-auto lg:h-16"
-            />
+            {logo ? (
+              <Image
+                src={logo}
+                alt={org.name}
+                width={1164}
+                height={824}
+                priority
+                className="blend-gold h-12 w-auto lg:h-16"
+              />
+            ) : (
+              <span className="truncate font-display text-xl leading-none tracking-wide text-ink lg:text-2xl">
+                {org.name}
+              </span>
+            )}
 
             {/*
               Hidden below `lg`. On a phone the logo alone fills the bar, and

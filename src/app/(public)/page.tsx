@@ -8,7 +8,6 @@ import { formatDuration, formatPrice } from "@/lib/site/pricing";
 import {
   STOCK_WORK_COUNT,
   stockBanner,
-  stockLogo,
   stockStylePhoto,
   stockWorkPhoto,
 } from "@/lib/site/stock-photos";
@@ -170,10 +169,7 @@ export default async function Home() {
    * this line stops reaching for the stand-in on its own.
    */
   const stock = stockBanner();
-  const uploadedLogo = imageUrl(org.content.logoPath);
-  const fallbackLogo = stockLogo();
-  const logo = uploadedLogo ?? fallbackLogo.url;
-  const logoAlt = uploadedLogo ? org.name : fallbackLogo.alt;
+  const logo = imageUrl(org.content.logoPath);
   const heroPath = imageUrl(org.content.heroImagePath);
   const hero = heroPath
     ? { url: heroPath, alt: org.content.heroImageAlt ?? org.name }
@@ -212,15 +208,23 @@ export default async function Home() {
           in globals.css; it is the reason there is no visible edge here.
           --------------------------------------------------------------- */}
       <section className="shell pt-12 pb-14 text-center lg:pt-20 lg:pb-20">
-        <Image
-          src={logo}
-          alt={logoAlt}
-          width={1164}
-          height={824}
-          priority
-          sizes="(min-width: 1024px) 44rem, 90vw"
-          className="blend-gold mx-auto h-auto w-full max-w-md sm:max-w-lg lg:max-w-2xl"
-        />
+        {logo ? (
+          <Image
+            src={logo}
+            alt={org.name}
+            width={1164}
+            height={824}
+            priority
+            sizes="(min-width: 1024px) 44rem, 90vw"
+            className="blend-gold mx-auto h-auto w-full max-w-md sm:max-w-lg lg:max-w-2xl"
+          />
+        ) : (
+          /* No logo uploaded yet is an ordinary state, not a fault. The
+             salon's name takes the space until there is one. */
+          <p className="font-display text-3xl font-light sm:text-4xl lg:text-5xl">
+            {org.name}
+          </p>
+        )}
 
         {place && <p className="label mt-8 text-brand">{place}</p>}
 
