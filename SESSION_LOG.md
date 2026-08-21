@@ -18,6 +18,67 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-21 — Redesign the public site, and wire up the things that should be tappable
+
+**Built:** The shopfront now looks like the salon rather than like a template.
+Dark warm near-black, gold, Cormorant Garamond at weight 300 over Jost, square
+corners, letterspaced small capitals. Committed as 166f418.
+
+Three rounds got there, and two of them were wrong. The first was editorial
+print on cream paper — serif, hairlines, narrow column — and read as dated. The
+second was bold geometric sans on dark, which had the right colours and the
+wrong voice. The third was picked from options shown side by side before
+anything was built, which is what should have happened first.
+
+Three decisions in that commit are load-bearing and are written up in its
+message. The dark palette is a class on ONE element in the public layout rather
+than on `:root`, so `/staff` and `/login` inherit nothing and stay light — that
+is also the hook a second salon's colours will hang on. Every band of content is
+wrapped in a single `shell` utility, which is why headings, prices and
+photographs all start on the same vertical line at every width; the drift before
+it came from each page carrying its own padding. And the logo is gold artwork on
+a black square drawn with `mix-blend-mode: screen`, which makes the black
+disappear into the page with no cut-out and no halo.
+
+The gold was measured, not chosen. Decoding the logo and counting its brightest
+pixels put it at #f0d050, so that is what the site uses. An earlier muted
+antique gold was the more tasteful choice and failed the only test that
+mattered: it could not be seen.
+
+Also wired up, because they were the same visit: tapping a service goes to
+`/book?s0=<id>` and lands on the time picker with that service already chosen
+rather than asking again; addresses in the footer, on the homepage and on the
+contact page open a map; and every printed phone number dials, through one
+`PhoneLink` component instead of six copies of the same `tel:` rule.
+
+**Broke / unresolved:** Nothing broken. Two temporary things are in the tree and
+both are marked in the code. The photographs in `lib/site/stock-photos.ts` are
+Unsplash stand-ins used only where the database has no image, and
+`next.config.ts` allows that host for as long as they exist. The logo sits in
+`/public/brand/` rather than Supabase Storage; the code reads
+`public_settings.logo` first, so uploading it retires the fallback with nothing
+else edited.
+
+`supabase/scripts/set-kedus-highlights.sql` has NOT been run — it fills in the
+three small facts under the hero and the values in it are guesses, not Selam's.
+
+Two bugs found by looking at renders rather than at code: the footer came out
+near-black on near-black, because `ink-inverse` means "text on the brand colour"
+and the brand colour is now gold; and a terracotta link measured 3.4:1 against
+the background, under the 4.5:1 small text needs.
+
+**Next:** The braiding option engine from the mind map. The plan is agreed and
+nothing is built. Ten categories, but only Braiding is an engine — the rest are
+flat lists the current `services` table already handles. Prices and durations
+add up from the options chosen, and that addition has to happen inside
+`create_appointment()` rather than in the form, or the calendar can be lied to.
+Photo-upload requests get their own table with no slot attached, because an
+appointment row holds its time the moment it exists and an unpriced request has
+no time to hold. Stage 1 is the category tree, and it needs Selam's numbers
+before it is worth starting.
+
+---
+
 ## 2026-08-20 — Audit the booking flow, then fix what it found
 
 **Built:** An audit of every public page and the whole booking path, read
