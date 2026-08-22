@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 
-import type { Column } from "@/lib/appointments/columns";
 import { STATUSES, statusMeta, type StatusKey } from "@/lib/appointments/status";
 import { salonMinutes, salonTime } from "@/lib/site/datetime";
 
@@ -41,11 +40,27 @@ export type Row = {
   employee: { id: string; full_name: string } | null;
   service: { name: string; is_included_with_others: boolean } | null;
   customer: { full_name: string; phone: string } | null;
+
+  /*
+   * WHICH COLUMN THIS BELONGS IN, DECIDED ON THE SERVER.
+   *
+   * The grid used to work it out itself, which meant it had to know that
+   * columns are people and that the assistants share one. Then the week view
+   * arrived, where columns are days, and the same grid could not serve both
+   * without learning a second rule.
+   *
+   * A function would be the obvious fix and cannot cross the boundary — props
+   * handed from a server component to a client one have to be serialisable.
+   * So the server tags each row instead, and this file no longer knows what a
+   * column MEANS. That is why one component draws both views.
+   */
+  column_id: string;
 };
 
 type Props = {
   rows: Row[];
-  columns: { stylists: Column[]; support: Column[] };
+  /** In the order they are drawn, left to right. */
+  columns: { id: string; label: string }[];
   timezone: string;
   canManage: boolean;
 };
@@ -56,7 +71,6 @@ const DAY_START = 7 * 60;
 const DAY_END = 22 * 60;
 
 const ZOOMS = [40, 60, 90, 130];
-const SUPPORT = "__support__";
 
 /* One shared empty object, so "nothing is pending" is the same reference on
    every render rather than a fresh one that rebuilds the day below it. */
@@ -254,17 +268,14 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
       ? (row.service?.name ?? "—")
       : (headline.get(row.visit_id) ?? row.service?.name ?? "—");
 
-  /** Everything in one column, placed. Support rows all land in the last one. */
+  /** Everything in one column, placed. */
   const laid = useMemo(() => {
     const byColumn = new Map<string, Row[]>();
-    const supportIds = new Set(columns.support.map((person) => person.id));
 
     for (const row of visible) {
-      const id = row.employee?.id;
-      const column = !id ? SUPPORT : supportIds.has(id) ? SUPPORT : id;
-      const list = byColumn.get(column) ?? [];
+      const list = byColumn.get(row.column_id) ?? [];
       list.push(row);
-      byColumn.set(column, list);
+      byColumn.set(row.column_id, list);
     }
 
     const out = new Map<string, Placed[]>();
@@ -274,7 +285,7 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
     }
 
     return out;
-  }, [visible, columns.support, timezone, pxPerHour]);
+  }, [visible, timezone, pxPerHour]);
 
   const hours = useMemo(() => {
     const out: number[] = [];
@@ -285,12 +296,7 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
 
   const gridHeight = ((DAY_END - DAY_START) / 60) * pxPerHour;
 
-  const heads = [
-    ...columns.stylists,
-    ...(columns.support.length > 0
-      ? [{ id: SUPPORT, full_name: "Assistants" }]
-      : []),
-  ];
+  const heads = columns;
 
   function mark(row: Row) {
     if (!brush || !canManage) return;
@@ -459,9 +465,9 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
               <div
                 key={head.id}
                 className="sticky top-0 z-20 truncate border-r border-b border-line bg-surface px-2 py-2 text-center text-sm font-medium last:border-r-0"
-                title={head.full_name}
+                title={head.label}
               >
-                {head.full_name}
+                {head.label}
               </div>
             ))}
 

@@ -1,0 +1,194 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+
+import { can, requireProfile } from "@/lib/auth";
+import { getDayColumns } from "@/lib/appointments/columns";
+import { salonDateKey, salonDayLabel } from "@/lib/site/datetime";
+import { getOrganization } from "@/lib/site/organization";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+import { DayGrid, type Row } from "../day-grid";
+
+/**
+ * One person's week.
+ *
+ * The day view answers "where is the gap today" across the whole salon. This
+ * answers the other question the desk gets on the telephone — "when is Fikir
+ * next free?" — which a day view can only answer by being opened seven times.
+ *
+ * ONE PERSON, NOT EVERYBODY. Days across and time down leaves seven columns;
+ * putting ten stylists into each of them is the assistants column ten times
+ * over, and unreadable. Every salon system makes the same choice, and the
+ * stylist selector is the whole interface.
+ *
+ * It is the same grid as the day view, drawing the same blocks with the same
+ * marking. `Row.column_id` is what makes that possible: the server decides
+ * what a column means — a person there, a date here — and the grid draws
+ * columns without knowing which.
+ */
+
+export const metadata: Metadata = {
+  title: "The week",
+  robots: { index: false, follow: false },
+};
+
+export const dynamic = "force-dynamic";
+
+/** Calendar-square arithmetic, in UTC — a date is not a moment. */
+function shiftDays(dateKey: string, by: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const when = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + by));
+
+  return when.toISOString().slice(0, 10);
+}
+
+/** The Sunday-to-Saturday week containing this date. */
+function weekOf(dateKey: string): string[] {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const when = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1));
+  const sunday = shiftDays(dateKey, -when.getUTCDay());
+
+  return Array.from({ length: 7 }, (_, i) => shiftDays(sunday, i));
+}
+
+export default async function StaffWeekPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
+  /* The page guards itself — a layout is not re-run between pages that share
+     it, and proxy.ts deliberately guards nothing. */
+  const profile = await requireProfile();
+
+  const params = await searchParams;
+  const org = await getOrganization();
+  const supabase = await createSupabaseServerClient();
+
+  const mayManage = await can("appointment.manage");
+  const today = salonDateKey(new Date(), org.timezone);
+
+  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? "")
+    ? (params.date as string)
+    : today;
+
+  const days = weekOf(anchor);
+  const columns = await getDayColumns(org.id);
+
+  /*
+   * Who to show. A stylist looking at their own week is the common case and
+   * needs no choosing, so it defaults to them; anybody else gets the first
+   * person on the roster until they pick. `?employee=` carries the choice, so
+   * a week is a link somebody can send.
+   */
+  const chosen =
+    params.employee ??
+    columns.stylists.find((person) => person.full_name === profile.full_name)
+      ?.id ??
+    columns.stylists[0]?.id ??
+    "";
+
+  const from = new Date(`${days[0]}T00:00:00`);
+  const to = new Date(`${days[6]}T23:59:59`);
+
+  const { data, error } = await supabase
+    .from("appointments")
+    .select(
+      `id, visit_id, starts_at, ends_at, phase, status, employee_requested,
+       for_name, notes,
+       employee:employees (id, full_name),
+       service:services (name, is_included_with_others),
+       customer:customers (full_name, phone)`,
+    )
+    .eq("employee_id", chosen)
+    .gte("starts_at", from.toISOString())
+    .lte("starts_at", to.toISOString())
+    .is("deleted_at", null)
+    .order("starts_at");
+
+  /* The column is the salon-local date the appointment falls on — not the
+     server's date, which is a different day for part of every evening. */
+  const rows = ((data ?? []) as unknown as Omit<Row, "column_id">[]).map(
+    (row) => ({
+      ...row,
+      column_id: salonDateKey(row.starts_at, org.timezone),
+    }),
+  ) as Row[];
+
+  const heads = days.map((day) => ({
+    id: day,
+    label: `${salonDayLabel(day)}${day === today ? " · today" : ""}`,
+  }));
+
+  const everyone = [...columns.stylists, ...columns.support];
+
+  return (
+    <div className="flex flex-col gap-5 p-5 lg:p-8">
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div>
+          <p className="label text-ink-muted">The week</p>
+          <h1 className="mt-1 font-display text-3xl lg:text-4xl">
+            {everyone.find((person) => person.id === chosen)?.full_name ??
+              "Nobody selected"}
+          </h1>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {/* A form rather than a dropdown that needs JavaScript — the choice
+              belongs in the URL, so a week can be sent to somebody. */}
+          <form className="flex items-center gap-2">
+            <input type="hidden" name="date" value={anchor} />
+            <select
+              name="employee"
+              defaultValue={chosen}
+              className="border border-line bg-surface px-3 py-2"
+            >
+              {everyone.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.full_name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="border border-line px-3 py-2 transition-colors hover:border-ink"
+            >
+              Show
+            </button>
+          </form>
+
+          <Link
+            href={`/staff/week?date=${shiftDays(anchor, -7)}&employee=${chosen}`}
+            className="border border-line px-3 py-2 transition-colors hover:border-ink"
+          >
+            &larr;
+          </Link>
+          <Link
+            href={`/staff/week?employee=${chosen}`}
+            className="border border-line px-3 py-2 transition-colors hover:border-ink"
+          >
+            This week
+          </Link>
+          <Link
+            href={`/staff/week?date=${shiftDays(anchor, 7)}&employee=${chosen}`}
+            className="border border-line px-3 py-2 transition-colors hover:border-ink"
+          >
+            &rarr;
+          </Link>
+        </div>
+      </header>
+
+      {error ? (
+        <p className="text-ink-muted">
+          The week could not be loaded. {error.message}
+        </p>
+      ) : (
+        <DayGrid
+          rows={rows}
+          columns={heads}
+          timezone={org.timezone}
+          canManage={mayManage}
+        />
+      )}
+    </div>
+  );
+}

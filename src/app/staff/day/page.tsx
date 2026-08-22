@@ -81,7 +81,36 @@ export default async function StaffDayPage({
     getDayColumns(org.id),
   ]);
 
-  const rows = (data ?? []) as unknown as Row[];
+  /*
+   * Each row is tagged with the column it belongs in, here rather than in the
+   * grid. The grid draws columns and knows nothing about what they mean, which
+   * is what lets the same component serve the week view where they are days.
+   *
+   * Everybody who only ever finishes shares the last column. See the note in
+   * `getDayColumns()` for why that is right rather than a slight.
+   */
+  const supportIds = new Set(columns.support.map((person) => person.id));
+  const SUPPORT = "__support__";
+
+  const rows = ((data ?? []) as unknown as Omit<Row, "column_id">[]).map(
+    (row) => ({
+      ...row,
+      column_id:
+        !row.employee?.id || supportIds.has(row.employee.id)
+          ? SUPPORT
+          : row.employee.id,
+    }),
+  ) as Row[];
+
+  const heads = [
+    ...columns.stylists.map((person) => ({
+      id: person.id,
+      label: person.full_name,
+    })),
+    ...(columns.support.length > 0
+      ? [{ id: SUPPORT, label: "Assistants" }]
+      : []),
+  ];
 
   return (
     /* The staff shell supplies no padding of its own, so every screen inside
@@ -114,7 +143,7 @@ export default async function StaffDayPage({
       ) : (
         <DayGrid
           rows={rows}
-          columns={columns}
+          columns={heads}
           timezone={org.timezone}
           canManage={mayManage}
         />
