@@ -132,10 +132,11 @@ function place(rows: Row[], timezone: string, pxPerHour: number): Placed[] {
     cluster.push({
       row,
       top: ((from - DAY_START) / 60) * pxPerHour,
-      /* A thirty-minute service at the smallest zoom is twenty pixels, and
-         four lines of text need more than that. Blocks never shrink below a
-         readable height; the hour lines behind them carry the true length. */
-      height: Math.max(((to - from) / 60) * pxPerHour, 46),
+      /* Barely a floor. An earlier version clamped to 46px so four lines of
+         text would fit, which made every short service look like an hour —
+         the grid's whole job is that a block's height IS its length. The box
+         drops lines instead as it gets shorter; see `lines()` below. */
+      height: Math.max(((to - from) / 60) * pxPerHour, 18),
       lane,
       lanes: 1,
       endsAt: to,
@@ -147,6 +148,29 @@ function place(rows: Row[], timezone: string, pxPerHour: number): Placed[] {
   flush();
 
   return placed;
+}
+
+/**
+ * How much a block can say at the height it has.
+ *
+ * A twenty-minute trim at the smallest zoom is thirteen pixels. Four lines of
+ * text do not fit in thirteen pixels, and the honest answer is to say less
+ * rather than to pretend the appointment is longer than it is — a block whose
+ * height is a lie defeats the only thing a grid does better than a list.
+ *
+ * The order is what somebody reads out on the telephone, so what survives at
+ * each size is the front of that sentence.
+ */
+function lines(height: number): {
+  style: boolean;
+  phone: boolean;
+  time: boolean;
+} {
+  return {
+    style: height >= 34,
+    time: height >= 52,
+    phone: height >= 72,
+  };
 }
 
 export function DayGrid({ rows, columns, timezone, canManage }: Props) {
@@ -407,123 +431,151 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
           Nobody is set up to take bookings yet.
         </p>
       ) : (
-        <div className="overflow-x-auto border border-line">
-          <div className="min-w-max">
-            {/* The heading row follows you down a long day. */}
-            <div className="sticky top-0 z-20 flex border-b border-line bg-surface">
-              <div className="w-14 shrink-0 border-r border-line" />
-              {heads.map((head) => (
-                <div
-                  key={head.id}
-                  className="w-44 shrink-0 border-r border-line px-2 py-2 text-center text-sm font-medium last:border-r-0"
+        /*
+         * The grid scrolls inside itself rather than making the page tall.
+         * Fifteen hours at any readable zoom is well past a screen, and a
+         * pane with its own scroll is what lets the column headings and the
+         * clock stay put while you move through the day.
+         */
+        <div className="max-h-[68vh] overflow-auto border border-line">
+          <div
+            className="grid"
+            style={{
+              /*
+                Columns share whatever room there is and stop shrinking at
+                8.5rem. Four stylists fill a laptop; twelve overflow and the
+                pane scrolls sideways. A fixed width did neither — it left
+                dead space at one end of the range and forced a scrollbar at
+                the other.
+              */
+              gridTemplateColumns: `3.25rem repeat(${heads.length}, minmax(8.5rem, 1fr))`,
+            }}
+          >
+            {/* The corner sits above both sticky edges, so neither slides
+                under it. */}
+            <div className="sticky top-0 left-0 z-30 border-r border-b border-line bg-surface" />
+
+            {heads.map((head) => (
+              <div
+                key={head.id}
+                className="sticky top-0 z-20 truncate border-r border-b border-line bg-surface px-2 py-2 text-center text-sm font-medium last:border-r-0"
+                title={head.full_name}
+              >
+                {head.full_name}
+              </div>
+            ))}
+
+            {/* The clock, which stays put as the pane scrolls sideways. */}
+            <div
+              className="sticky left-0 z-10 border-r border-line bg-surface"
+              style={{ height: gridHeight }}
+            >
+              {hours.map((minute) => (
+                <span
+                  key={minute}
+                  className="absolute right-1.5 -translate-y-1/2 text-[0.6875rem] tabular-nums text-ink-muted"
+                  style={{ top: ((minute - DAY_START) / 60) * pxPerHour }}
                 >
-                  {head.full_name}
-                </div>
+                  {String(Math.floor(minute / 60)).padStart(2, "0")}:00
+                </span>
               ))}
             </div>
 
-            <div className="flex">
-              {/* The clock down the side. */}
+            {heads.map((head) => (
               <div
-                className="relative w-14 shrink-0 border-r border-line"
+                key={head.id}
+                className="relative border-r border-line last:border-r-0"
                 style={{ height: gridHeight }}
               >
+                {/* Hour lines only. Half-hours turn the column into a ladder
+                    at the smaller zooms and the blocks stop standing out
+                    from it. */}
                 {hours.map((minute) => (
-                  <span
+                  <div
                     key={minute}
-                    className="absolute right-2 -translate-y-1/2 text-xs tabular-nums text-ink-muted"
+                    aria-hidden
+                    className="absolute inset-x-0 border-t border-line"
                     style={{ top: ((minute - DAY_START) / 60) * pxPerHour }}
-                  >
-                    {String(Math.floor(minute / 60)).padStart(2, "0")}:00
-                  </span>
+                  />
                 ))}
-              </div>
 
-              {heads.map((head) => (
-                <div
-                  key={head.id}
-                  className="relative w-44 shrink-0 border-r border-line last:border-r-0"
-                  style={{ height: gridHeight }}
-                >
-                  {/* The hour lines. Half-hours are deliberately absent — at
-                      forty pixels an hour they turn the column into a ladder
-                      and the blocks stop standing out from it. */}
-                  {hours.map((minute) => (
-                    <div
-                      key={minute}
-                      aria-hidden
-                      className="absolute inset-x-0 border-t border-line"
-                      style={{ top: ((minute - DAY_START) / 60) * pxPerHour }}
-                    />
-                  ))}
+                {(laid.get(head.id) ?? []).map((block) => {
+                  const row = block.row;
+                  const status = statusMeta(overrides[row.id] ?? row.status);
+                  const ended = !status.holdsTheSlot;
+                  const width = 100 / block.lanes;
+                  const show = lines(block.height);
 
-                  {(laid.get(head.id) ?? []).map((block) => {
-                    const row = block.row;
-                    const status = statusMeta(overrides[row.id] ?? row.status);
-                    const ended = !status.holdsTheSlot;
-                    const width = 100 / block.lanes;
-
-                    return (
-                      <button
-                        key={row.id}
-                        type="button"
-                        onClick={() => mark(row)}
-                        disabled={!brush || !canManage}
-                        aria-label={`${row.customer?.full_name ?? "Appointment"}, ${label(row)}, ${salonTime(row.starts_at, timezone)}`}
-                        className={`absolute overflow-hidden rounded-sm border-l-4 px-1.5 py-1 text-left text-xs leading-tight ${
-                          brush && canManage
-                            ? "cursor-pointer hover:brightness-95"
-                            : "cursor-default"
-                        } ${ended ? "opacity-50" : ""}`}
-                        style={{
-                          top: block.top,
-                          height: block.height,
-                          left: `calc(${block.lane * width}% + 2px)`,
-                          width: `calc(${width}% - 4px)`,
-                          /* The status colour carries the block: a tint for
-                             the body, the full value on the edge. Never the
-                             only signal — the status word is in the box. */
-                          borderLeftColor: `var(${status.token})`,
-                          background: `color-mix(in oklab, var(${status.token}) 12%, var(--surface))`,
-                        }}
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => mark(row)}
+                      disabled={!brush || !canManage}
+                      title={`${row.customer?.full_name ?? ""} · ${label(row)} · ${salonTime(row.starts_at, timezone)}–${salonTime(row.ends_at, timezone)} · ${status.label}`}
+                      aria-label={`${row.customer?.full_name ?? "Appointment"}, ${label(row)}, ${salonTime(row.starts_at, timezone)}, ${status.label}`}
+                      className={`absolute overflow-hidden rounded-sm border-l-[3px] px-1.5 py-0.5 text-left text-[0.6875rem] leading-[1.35] ${
+                        brush && canManage
+                          ? "cursor-pointer hover:brightness-95"
+                          : "cursor-default"
+                      } ${ended ? "opacity-50" : ""}`}
+                      style={{
+                        top: block.top,
+                        height: block.height,
+                        left: `calc(${block.lane * width}% + 2px)`,
+                        width: `calc(${width}% - 4px)`,
+                        /* The status colour carries the block: a tint for the
+                           body, the full value on the edge. Never the only
+                           signal — the word is in the box whenever it fits,
+                           and always in the tooltip. */
+                        borderLeftColor: `var(${status.token})`,
+                        background: `color-mix(in oklab, var(${status.token}) 12%, var(--surface))`,
+                      }}
+                    >
+                      {/* Name, style, number, start — one per line, in the
+                          order somebody reads them out on the telephone.
+                          Lines drop off the bottom as the block gets shorter
+                          rather than the block growing to fit them. */}
+                      <p
+                        className={`truncate font-medium ${ended ? "line-through" : ""}`}
                       >
-                        {/* Name, style, number, start — one per line, in the
-                            order somebody reads them out on the telephone. */}
-                        <p className={`truncate font-medium ${ended ? "line-through" : ""}`}>
-                          {row.customer?.full_name?.split(" ")[0] ?? "—"}
-                          {row.for_name && (
-                            <span className="font-normal"> · {row.for_name}</span>
-                          )}
-                          {row.employee_requested && (
-                            <span className="text-brand" title="Asked for by name">
-                              {" ★"}
-                            </span>
-                          )}
-                        </p>
+                        {row.customer?.full_name?.split(" ")[0] ?? "—"}
+                        {row.for_name && (
+                          <span className="font-normal"> · {row.for_name}</span>
+                        )}
+                        {row.employee_requested && (
+                          <span className="text-brand" title="Asked for by name">
+                            {" ★"}
+                          </span>
+                        )}
+                      </p>
 
+                      {show.style && (
                         <p className="truncate">
                           {label(row)}
                           {row.phase === "finish" && (
                             <span className="text-ink-muted"> · finishing</span>
                           )}
                         </p>
+                      )}
 
-                        {row.customer?.phone && (
-                          <p className="truncate tabular-nums text-ink-muted">
-                            {row.customer.phone}
-                          </p>
-                        )}
+                      {show.phone && row.customer?.phone && (
+                        <p className="truncate tabular-nums text-ink-muted">
+                          {row.customer.phone}
+                        </p>
+                      )}
 
+                      {show.time && (
                         <p className="truncate tabular-nums text-ink-muted">
                           {salonTime(row.starts_at, timezone)}
                           <span className="ml-1">· {status.label}</span>
                         </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       )}

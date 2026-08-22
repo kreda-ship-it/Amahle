@@ -108,7 +108,7 @@ export function DatePicker({ selected, today }: Props) {
   }
 
   return (
-    <div className="w-full max-w-[19rem] border border-line bg-surface p-3">
+    <div className="w-[17rem] shrink-0 border border-line bg-surface p-2.5">
       <div className="flex items-center justify-between gap-2">
         {shape === "month" ? (
           <button

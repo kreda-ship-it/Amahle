@@ -84,12 +84,27 @@ export default async function StaffDayPage({
   const rows = (data ?? []) as unknown as Row[];
 
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <p className="label text-ink-muted">
-          {seesEverything ? "The whole salon" : "Your day"}
-        </p>
-        <h1 className="mt-1 font-display text-3xl">{salonDayLabelLong(day)}</h1>
+    /* The staff shell supplies no padding of its own, so every screen inside
+       it sets the same one. Matches the dashboard. */
+    <div className="flex flex-col gap-5 p-5 lg:p-8">
+      {/*
+        The calendar sits in the heading rather than beside the grid. Put next
+        to it, it took nineteen rems out of the width the columns need — on a
+        laptop with the sidebar open that is most of a stylist. Up here it
+        costs height instead, and folding it to a week is how you get the
+        height back.
+      */}
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div>
+          <p className="label text-ink-muted">
+            {seesEverything ? "The whole salon" : "Your day"}
+          </p>
+          <h1 className="mt-1 font-display text-3xl lg:text-4xl">
+            {salonDayLabelLong(day)}
+          </h1>
+        </div>
+
+        <DatePicker selected={day} today={today} />
       </header>
 
       {error ? (
@@ -97,26 +112,12 @@ export default async function StaffDayPage({
           The day could not be loaded. {error.message}
         </p>
       ) : (
-        /*
-         * The calendar sits beside the grid on a wide screen and above it on a
-         * narrow one — `flex-row-reverse` rather than a second copy of the
-         * markup, so there is one calendar in the document and one in the
-         * accessibility tree.
-         */
-        <div className="flex flex-col gap-5 xl:flex-row-reverse xl:items-start">
-          <div className="shrink-0">
-            <DatePicker selected={day} today={today} />
-          </div>
-
-          <div className="flex min-w-0 flex-1 flex-col gap-4">
-            <DayGrid
-              rows={rows}
-              columns={columns}
-              timezone={org.timezone}
-              canManage={mayManage}
-            />
-          </div>
-        </div>
+        <DayGrid
+          rows={rows}
+          columns={columns}
+          timezone={org.timezone}
+          canManage={mayManage}
+        />
       )}
     </div>
   );
