@@ -514,7 +514,14 @@ migrations 016 and 021. Returns `(slot_starts_at, slot_employee_id)`.
 is the sum of the durations, the trailing buffer comes from the last service,
 and only stylists who perform *every* one are offered — a visit split across two
 specialists is a phone call, because finding a chain of stylists whose free time
-joins up is a different and much worse problem than finding one gap. The employee is in the result
+joins up is a different and much worse problem than finding one gap.
+
+> **Superseded by DECISIONS #32, and still true of the code today.** The salon
+> employs washers who are not stylists, so braiding plus a wash — its most
+> ordinary booking — is exactly the case this refuses. A visit will be allowed
+> to span two employees, anchored on the scarce service. Nothing above has
+> changed yet; this paragraph describes what `get_available_slots()` does right
+> now and stops being accurate when that work lands. The employee is in the result
 because `employee` may be null, meaning "anyone who performs this".
 
 **Nothing is precomputed.** No slot table, no nightly job, no cache. Availability

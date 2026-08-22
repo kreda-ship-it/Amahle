@@ -525,6 +525,54 @@ exception to it.
 
 ---
 
+## 32. A visit may be split across two employees, anchored on the scarce one — _2026-08-22_
+**Decision:** One visit may be performed by more than one employee, one per
+service. `appointments` already carries `employee_id` per row, so this is a
+change to how times are found and booked, not to how they are stored.
+Availability finds slots for the SCARCE service first — the long one, the one
+with few people who can do it — and then filters those candidates by whether
+somebody free can do the short service in the gap beside it. Service order
+inside a visit becomes a rule rather than an accident: the wash comes before the
+braid.
+
+This reverses the line in SCHEMA.md and migration 021 that says "a visit split
+across two specialists is a phone call".
+
+**Why:** The salon employs washers and blow-dry staff who are not stylists.
+Braiding plus a wash is not an edge case there, it is the ordinary booking, and
+under the old rule it would offer only employees linked to *both* services —
+which is nobody, or accidentally only the stylists. The most common visit in the
+salon was the one the software refused to schedule.
+
+The reason the old decision gave is still true: searching for a chain of
+employees whose free time joins up is much worse than finding one gap. What it
+missed is that the two resources are not equal. Six hours of a braider is the
+constraint; forty-five minutes of a washer is not, because washers are more
+numerous and interchangeable. Anchoring on the scarce service turns a
+combinatorial search into the existing search plus a cheap filter — and it is
+how the salon already thinks about its own day.
+
+A second column falls out of this and is part of the same decision:
+`appointments.employee_requested`. When a customer picks "Anyone" and the system
+assigns Hanna, the row says Hanna and is indistinguishable from a row where the
+customer asked for Hanna by name. The receptionist rearranges the day constantly
+and may move the first but not the second, so the difference has to be recorded
+at booking time or it is lost.
+
+**Alternative rejected:** Keep one employee per visit and require the stylist to
+do the wash. That is the status quo and it is what the salon does not do — it
+puts a six-hour braider on a forty-five minute wash and wastes the scarcest
+resource in the building. Also rejected: full multi-employee chain search, which
+is the expensive general case, buys nothing this salon needs, and would make
+availability slow in the one place it must stay fast.
+
+**Revisit when:** A visit needs three or more employees, or the short service
+stops being interchangeable — a named colourist who must personally do a step
+before another named stylist continues. Both break the anchor, because there is
+then no single scarce resource to anchor on.
+
+---
+
 ## Template for new entries
 
 ```
