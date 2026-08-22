@@ -37,7 +37,25 @@ export type CreateAppointmentInput = {
    */
   serviceIds: string[];
 
-  employeeId: string;
+  /**
+   * Who performs each service.
+   *
+   * One id means one person does the whole visit, which is the common case
+   * and what the booking form sends today. Several — the same length as
+   * `serviceIds`, in the same order — is a wash by one person and braids by
+   * another, which is the ordinary shape of a braiding visit at this salon.
+   * See DECISIONS #32.
+   */
+  employeeIds: string[];
+
+  /**
+   * True when the customer asked for these people by name, false when the
+   * system assigned them.
+   *
+   * Recorded because the two are indistinguishable afterwards, and the
+   * receptionist may move an assignment but not a request.
+   */
+  employeeRequested?: boolean;
 
   /** When the customer sits down. The end time is computed from the service. */
   startsAt: Date | string;
@@ -122,7 +140,7 @@ export async function createAppointment(
   const { data, error } = await supabase.rpc("create_appointment", {
     p_org_id: input.organizationId,
     p_service_ids: input.serviceIds,
-    p_employee_id: input.employeeId,
+    p_employee_ids: input.employeeIds,
     p_starts_at: toIso(input.startsAt),
     p_customer_name: input.customerName,
     p_customer_phone: input.customerPhone,
@@ -132,6 +150,7 @@ export async function createAppointment(
     p_party_index: input.partyIndex ?? undefined,
     p_visit_id: input.visitId ?? undefined,
     p_for_name: input.forName ?? undefined,
+    p_employee_requested: input.employeeRequested ?? undefined,
   });
 
   if (error) {

@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       appointment_holds: {
@@ -68,6 +93,64 @@ export type Database = {
           },
         ]
       }
+      appointment_options: {
+        Row: {
+          appointment_id: string
+          created_at: string
+          duration_delta_minutes: number
+          group_name: string
+          id: string
+          option_id: string | null
+          option_name: string
+          org_id: string
+          price_delta: number
+        }
+        Insert: {
+          appointment_id: string
+          created_at?: string
+          duration_delta_minutes: number
+          group_name: string
+          id?: string
+          option_id?: string | null
+          option_name: string
+          org_id: string
+          price_delta: number
+        }
+        Update: {
+          appointment_id?: string
+          created_at?: string
+          duration_delta_minutes?: number
+          group_name?: string
+          id?: string
+          option_id?: string | null
+          option_name?: string
+          org_id?: string
+          price_delta?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_options_appointment_same_org"
+            columns: ["appointment_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "appointment_options_option_same_org"
+            columns: ["option_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "service_options"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "appointment_options_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointments: {
         Row: {
           blocked_until: string
@@ -76,6 +159,7 @@ export type Database = {
           customer_id: string
           deleted_at: string | null
           employee_id: string
+          employee_requested: boolean
           ends_at: string
           for_name: string | null
           id: string
@@ -96,6 +180,7 @@ export type Database = {
           customer_id: string
           deleted_at?: string | null
           employee_id: string
+          employee_requested?: boolean
           ends_at: string
           for_name?: string | null
           id?: string
@@ -116,6 +201,7 @@ export type Database = {
           customer_id?: string
           deleted_at?: string | null
           employee_id?: string
+          employee_requested?: boolean
           ends_at?: string
           for_name?: string | null
           id?: string
@@ -895,10 +981,237 @@ export type Database = {
           },
         ]
       }
+      service_categories: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          display_order: number
+          id: string
+          is_active: boolean
+          name: string
+          org_id: string
+          parent_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          org_id: string
+          parent_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          org_id?: string
+          parent_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_categories_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_categories_parent_same_org"
+            columns: ["parent_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "service_categories"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      service_option_group_links: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          depends_on_option_id: string | null
+          display_order: number
+          group_id: string
+          id: string
+          org_id: string
+          service_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          depends_on_option_id?: string | null
+          display_order?: number
+          group_id: string
+          id?: string
+          org_id: string
+          service_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          depends_on_option_id?: string | null
+          display_order?: number
+          group_id?: string
+          id?: string
+          org_id?: string
+          service_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_option_group_links_depends_same_org"
+            columns: ["depends_on_option_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "service_options"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "service_option_group_links_group_same_org"
+            columns: ["group_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "service_option_groups"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "service_option_group_links_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_option_group_links_service_same_org"
+            columns: ["service_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      service_option_groups: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          display_order: number
+          id: string
+          is_active: boolean
+          is_required: boolean
+          name: string
+          org_id: string
+          prompt: string
+          selection: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          is_required?: boolean
+          name: string
+          org_id: string
+          prompt: string
+          selection?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          is_required?: boolean
+          name?: string
+          org_id?: string
+          prompt?: string
+          selection?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_option_groups_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_options: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          display_order: number
+          duration_delta_minutes: number
+          group_id: string
+          id: string
+          is_active: boolean
+          name: string
+          org_id: string
+          price_delta: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          display_order?: number
+          duration_delta_minutes?: number
+          group_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          org_id: string
+          price_delta?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          display_order?: number
+          duration_delta_minutes?: number
+          group_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          org_id?: string
+          price_delta?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_options_group_same_org"
+            columns: ["group_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "service_option_groups"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "service_options_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       services: {
         Row: {
           buffer_minutes: number | null
           category: string | null
+          category_id: string | null
           created_at: string
           deleted_at: string | null
           description: string | null
@@ -908,6 +1221,7 @@ export type Database = {
           image_path: string | null
           is_active: boolean
           is_bookable_online: boolean
+          is_included_with_others: boolean
           name: string
           org_id: string
           price: number
@@ -917,6 +1231,7 @@ export type Database = {
         Insert: {
           buffer_minutes?: number | null
           category?: string | null
+          category_id?: string | null
           created_at?: string
           deleted_at?: string | null
           description?: string | null
@@ -926,6 +1241,7 @@ export type Database = {
           image_path?: string | null
           is_active?: boolean
           is_bookable_online?: boolean
+          is_included_with_others?: boolean
           name: string
           org_id: string
           price?: number
@@ -935,6 +1251,7 @@ export type Database = {
         Update: {
           buffer_minutes?: number | null
           category?: string | null
+          category_id?: string | null
           created_at?: string
           deleted_at?: string | null
           description?: string | null
@@ -944,6 +1261,7 @@ export type Database = {
           image_path?: string | null
           is_active?: boolean
           is_bookable_online?: boolean
+          is_included_with_others?: boolean
           name?: string
           org_id?: string
           price?: number
@@ -951,6 +1269,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "services_category_same_org"
+            columns: ["category_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "service_categories"
+            referencedColumns: ["id", "org_id"]
+          },
           {
             foreignKeyName: "services_org_id_fkey"
             columns: ["org_id"]
@@ -971,7 +1296,8 @@ export type Database = {
           p_customer_email?: string
           p_customer_name: string
           p_customer_phone: string
-          p_employee_id: string
+          p_employee_ids: string[]
+          p_employee_requested?: boolean
           p_for_name?: string
           p_notes?: string
           p_org_id: string
@@ -1078,6 +1404,15 @@ export type Database = {
       round_up_to_minutes: {
         Args: { p_minutes: number; p_ts: string }
         Returns: string
+      }
+      schedule_permits: {
+        Args: {
+          p_employee_id: string
+          p_minutes: number
+          p_org_id: string
+          p_starts_at: string
+        }
+        Returns: boolean
       }
     }
     Enums: {
@@ -1207,6 +1542,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

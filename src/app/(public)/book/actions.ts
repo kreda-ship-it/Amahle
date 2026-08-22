@@ -188,7 +188,24 @@ export async function submitBooking(
       partyIndex: person,
       visitId,
       serviceIds,
-      employeeId: hold.employeeId,
+
+      /*
+       * One employee for the whole visit, which is what the current flow can
+       * express: availability still finds one person free for all of it.
+       * Migration 028 accepts a list so that a wash by one person and braids
+       * by another becomes possible; migration 029 is what will start
+       * OFFERING those times, and this line grows a second entry then.
+       */
+      employeeIds: [hold.employeeId],
+
+      /*
+       * Left at its default of false, and deliberately not guessed. The flow
+       * does let somebody filter to one stylist before picking a time, but
+       * that filter does not reach this action, so setting this true here
+       * would mark every booking a request. It is wired when the
+       * choose-your-professional step is rebuilt — see DECISIONS #32 for why
+       * the receptionist needs the difference.
+       */
       startsAt: hold.startsAt,
       customerName: name,
       customerPhone: phone,
