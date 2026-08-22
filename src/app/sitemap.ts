@@ -6,7 +6,7 @@ import { absoluteUrl } from "@/lib/site/url";
  * Served at /sitemap.xml — a plain list of every public page, so a search
  * engine does not have to discover them by following links.
  *
- * Five pages is small enough that Google would find them all anyway. It costs
+ * Six pages is small enough that Google would find them all anyway. It costs
  * almost nothing, and it means a page added later is found in days rather
  * than whenever a crawler happens back.
  *
@@ -62,6 +62,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: updated,
       changeFrequency: "yearly",
       priority: 0.8,
+    },
+    {
+      // Listed so it can be found, ranked last on purpose. Nobody searches
+      // for a salon hoping to read its policies; they read them because
+      // they are about to book.
+      url: absoluteUrl("/policies"),
+      lastModified: updated,
+      changeFrequency: "yearly",
+      priority: 0.3,
     },
   ];
 }

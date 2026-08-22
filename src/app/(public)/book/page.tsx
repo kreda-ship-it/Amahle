@@ -18,6 +18,7 @@ import {
   salonTime,
 } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
+import { bookingEssentials } from "@/lib/site/policies";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
 
 import { PhoneLink } from "../phone-link";
@@ -508,15 +509,65 @@ async function PartyDetails({
     holds[0].expiresAt,
   );
 
-  return (
-    <section className="mt-10 border border-line px-6 py-5">
-      <h2 className="font-display text-2xl font-normal">Your details</h2>
+  const essentials = bookingEssentials({
+    name: org.name,
+    phone: org.phone,
+    textNumber: org.content.textNumber,
+    hours: org.content.hours,
+  });
 
-      <BookingForm
-        people={people}
-        heldUntil={salonTime(soonest, org.timezone)}
-      />
-    </section>
+  return (
+    <>
+      {/*
+        The house rules, on the last step rather than the first.
+
+        Putting them in front of somebody who has not yet chosen a service is
+        asking them to read terms for a purchase they have not decided to
+        make, and it is how a booking flow loses people at the door. Here
+        they are read by somebody who has picked a stylist and a time, which
+        is the moment the twenty-minute grace period and the clean-hair rule
+        stop being abstract.
+      */}
+      <section className="mt-10 bg-surface-sunk px-6 py-5">
+        <h2 className="label text-ink">Before you book</h2>
+
+        <ul className="mt-4 space-y-2.5">
+          {essentials.map((line) => (
+            <li key={line} className="flex gap-3 text-sm leading-relaxed text-pretty">
+              <span aria-hidden className="text-brand">&mdash;</span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ul>
+
+        <p className="mt-5 text-sm text-ink-muted text-pretty">
+          This is the short version.{" "}
+          {/*
+            A new tab, deliberately. A held slot lapses, and somebody who
+            navigates away to read a long page and then hits Back is somebody
+            we may have to tell their time has gone.
+          */}
+          <a
+            href="/policies"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4 transition-colors hover:text-brand"
+          >
+            Read the full policies
+          </a>{" "}
+          — cancellations, payment, and what we do with your details.
+        </p>
+      </section>
+
+      <section className="mt-6 border border-line px-6 py-5">
+        <h2 className="font-display text-2xl font-normal">Your details</h2>
+
+        <BookingForm
+          people={people}
+          heldUntil={salonTime(soonest, org.timezone)}
+        />
+      </section>
+    </>
   );
 }
 

@@ -373,6 +373,21 @@ export default async function PublicLayout({
                 </li>
               ))}
 
+              {/*
+                Not in `navLinks`, deliberately. That list is the header
+                menu, and a policy page in the header is a shop putting its
+                terms and conditions in the window. People look for it in the
+                footer, which is where every site has trained them to look.
+              */}
+              <li>
+                <Link
+                  href="/policies"
+                  className="transition-colors hover:text-brand"
+                >
+                  Policies
+                </Link>
+              </li>
+
               {socialLinks.map((link) => (
                 <li key={link.label}>
                   <a
