@@ -1,6 +1,6 @@
 # ROADMAP.md — Amahle
 
-Last updated: 2026-08-18
+Last updated: 2026-08-22
 
 ---
 
@@ -450,22 +450,168 @@ moment a change would offer something the write path refuses.
    grid in 1 providing the tidiness the step was invented for
 
 ### Phase 5 — Staff calendar
-- [ ] Day view
-- [ ] Week view
-- [ ] **Manual appointment entry** (for phone bookings — critical)
-- [ ] Edit and reschedule
-- [ ] Cancel (soft-delete)
-- [ ] Appointment status changes
-- [ ] **Marking a no-show — in the FIRST version of the calendar, not a later
-      one.** Added 2026-08-20. DECISIONS #12 defers deposits until "no-shows
-      become a measured problem the salon complains about", and DECISIONS #29
-      defers reminders on a similar trigger. Neither trigger can fire today:
-      nothing in the system can set an appointment to `no_show`, so there is no
-      number to measure. Salon no-show rates typically run 15–25%; reminders
-      cut that by around a third, and reminders plus a deposit take it under
-      ten percent. Three months of real rows turns that from an argument into
-      arithmetic. Costs nothing to include now and cannot be backfilled later
-- [ ] Stylist sees only their own schedule; owner sees all
+
+Scoped in full 2026-08-22, after auditing what the staff area actually had —
+one page — against what the salon needs. The numbering below is the build
+order. It is not sorted by size or grouped by kind: each step exists to make
+the next one possible.
+
+**Two rules hold across every item here, and they are why this phase can move
+quickly.** No screen asks what role somebody holds; it asks `can()`, which asks
+the database. And no screen decides whether an appointment may exist — every one
+of those rules is already in Postgres, so a screen re-implementing one would
+eventually disagree with it, and the disagreement surfaces as a time the form
+offers and the database refuses.
+
+- [x] **Day view** — 2026-08-22. Grouped by person, visits marked so a founding
+      and a finishing read as one head, a star on anyone the customer asked for
+      by name. No role check in the file: `appointments_select` is
+      `appointment.view_all OR employee_id = current_employee_id()`, so a
+      stylist gets their own column and a receptionist gets the salon out of
+      identical code
+- [x] **Stylist sees only their own schedule; owner sees all** — same mechanism,
+      same commit. Row-level, not screen-level
+
+- [ ] **1. The shell.** Layout, permission-gated navigation, identity, sign out
+      on every page rather than on one. Nothing to demo, and everything after it
+      needs somewhere to live. It will look sparse until step 2 exists to link
+      to, which is a reason to keep it small, not a reason to skip it
+- [x] **Sign-in lands on `/staff`** — 2026-08-22. It went to `/`, so signing in
+      dropped you on the shopfront and you had to find the footer link and click
+      it again. Two lines. Signing *out* still goes to `/`, which is right
+
+- [ ] **2. Manual appointment entry.** The dense one-screen form for phone
+      bookings. PROJECT.md calls this the feature that decides whether the
+      project survives contact with reality. It is also what finally connects
+      the booking engine built on 2026-08-22 — the service tree, lead and finish
+      rows, two-person visits — to a human being, because nothing customer-facing
+      calls any of it yet
+
+- [ ] **3. Status changes, colours, and the highlighter.** Requested 2026-08-22
+      - Every appointment sits at `pending` today because nothing in the system
+        can move it. This is the step that unsticks them
+      - **A colour per status**, all eight, in a key down the side
+      - **The highlighter:** choose a status, then tap appointments to mark them.
+        Fast batch marking, which is what the day before actually looks like —
+        the salon rings ten people and marks the eight who answered
+      - **Undo, not a confirm dialog.** A strip at the bottom — "3 marked
+        cancelled · Undo" — for a few seconds. A dialog on every tap destroys the
+        speed the highlighter exists for; nothing else protects a mis-tap
+      - **Colour is never the only signal.** Around one man in twelve cannot
+        reliably separate red from green. Every status carries a word or a mark
+        as well as a colour
+      - **Cancelled and no-show rows have to become visible.** The day view
+        currently filters them out and prints a count in the footer. A status
+        cannot have a colour and also be hidden — they render struck through,
+        with a toggle
+      - **A stylist may set the status of their own appointments** — decided
+        2026-08-22. `checked_in`, `in_progress`, `completed`, `no_show`. Not
+        `cancelled`: cancelling has a customer on the other end of it and stays
+        behind `appointment.manage`. Shaped as a `security definer` function
+        rather than a policy, so the allowed statuses are named in one place
+      - **Marking a no-show is in this first version, not a later one.** Added
+        2026-08-20. DECISIONS #12 defers deposits until "no-shows become a
+        measured problem the salon complains about", and DECISIONS #29 defers
+        reminders on a similar trigger. Neither trigger can fire today: nothing
+        can set an appointment to `no_show`, so there is no number to measure.
+        Salon no-show rates typically run 15–25%; reminders cut that by around a
+        third, and reminders plus a deposit take it under ten percent. Three
+        months of real rows turns that from an argument into arithmetic. Costs
+        nothing to include now and cannot be backfilled later
+      - **Soft-delete on a single appointment** sets `deleted_at`, as everywhere
+        else. The "your appointment was cancelled" message it would one day
+        trigger is **not built and not in v1** — noted so the hook is designed
+        for, not so it is scaffolded
+
+- [ ] **4. Who can do this hair?** Read-only, and the cheapest useful thing in
+      the phase. `employee_services` already knows who leads and who assists each
+      service, from Selam's matrix. Tap a service and everyone who can take it is
+      highlighted; drag a customer onto somebody who cannot and the screen says
+      so before the drop. No new tables, no writes, no risk — and it is half of
+      what was asked for under "planning mode" without any of the machinery
+
+- [ ] **5. Live editing.** Drag to move, drag an edge to change length, tap empty
+      space to book there, cancel. The database validates on drop and refuses
+      anything illegal, which is correct — the design question is only what the
+      screen does at that moment. Snap back with a reason, and offer the nearest
+      legal time
+      - **Open: what happens when a `lead` row with `finish` rows attached is
+        dragged.** Move the founding two hours later and the assistant's
+        finishing work is floating, possibly onto somebody who has gone home.
+        Move the whole visit, refuse to move a lead alone, or ask. DECISIONS #32
+        created this shape and no screen has ever had to move one. Decide it with
+        a real example on screen, not in advance
+
+- [ ] **6. Planning mode.** Requested 2026-08-22. The same calendar in a second
+      mode, not a second calendar — two copies of the hardest UI in the app would
+      drift, and a planner that disagrees with the real calendar is worse than no
+      planner
+      - **The plan stores changes, not a copy of the day.** Three rows saying
+        "move Sara to 15:30", "give Thursday's 11:00 to Fikir" — never a snapshot
+        of Thursday. This one choice is what makes the rest free: a booking taken
+        while a plan is open shows through in both modes immediately, because the
+        plan was never holding its own copy of the day to fall out of step with.
+        There is nothing to sync. Stored as a snapshot, "keep the plan current"
+        would have been its own feature, and a buggy one
+      - **Changes flow one way only.** Live bookings appear in the plan
+        automatically; plan changes reach the real calendar only on **Apply**.
+        The real calendar also stays directly editable without entering planning
+        mode at all — the plan is an overlay, not a gate
+      - **Three actions, not two:** **Apply** (all of it lands or none of it
+        does, and it names what refused), **Save** (leave it and come back),
+        **Discard**
+      - **Apply is one transaction, deliberately.** A plan built at 10:00 and
+        applied at 10:20 may be stale — a phone booking took one of the slots. A
+        half-applied plan leaves a day that is neither its old shape nor its new
+        one, with nobody knowing which
+      - **Tabs, like sheets in a spreadsheet.** A plan has a name and a date. One
+        tab per day of the coming week by default, and a second plan for the same
+        day whenever it is wanted — "Thursday" beside "Thursday, if Fikir is
+        out". Same table either way
+      - **Every entry is re-checked when a plan is opened**, against the calendar
+        as it is now, and comes back as still valid, already done, no longer
+        possible, or orphaned — the appointment it referred to has been
+        cancelled. A saved plan that looks fine and is not is exactly the failure
+        that makes people stop trusting a tool
+      - **A plan reserves nothing.** It is not an appointment, holds no slot, and
+        blocks nobody. Somebody will assume otherwise, so the screen says it
+      - **Visible to anyone who can see the calendar**, labelled with who made
+        it. In a salon this size private plans cause more confusion than they
+        prevent, and "look at what I worked out for Thursday" is half the point
+      - **Needs a table, so it needs a migration** — `org_id`, RLS, soft-delete,
+        audit, like everything else. Also a dry-run function in the database:
+        "would this move be legal?" cannot be arithmetic in the browser, for the
+        same reason availability is not. The rules already exist inside
+        `schedule_permits()`; this asks them without writing
+      - **Not in the first version: planning a *new* appointment.** Moves and
+        reassignments only. A sketched-in walk-in holds no slot, so two people
+        can plan the same gap and both be told it is fine
+
+- [ ] **7. Week view.**
+
+- [ ] **8. Tomorrow's calls.** Tomorrow's appointments as a list, with
+      tap-to-call and tap-to-text on each and a confirmed toggle. No
+      infrastructure, no provider, no compliance — and it is how the salon
+      already works, except the list makes itself. This is what DECISIONS #29
+      means in practice: the salon confirms by hand, the system records it
+
+- [ ] **9. My profile.** Small, and can be pulled forward whenever it is wanted.
+      A person's own details, their own week, their own time off
+      - **A stylist may edit their own details** — decided 2026-08-22. Phone,
+        email, bio, photo. Not `position`, not `display_order`, not
+        `is_bookable`, not `is_active`: a stylist taking themselves off the
+        roster on a Saturday morning is not a feature. `employee.record.manage`
+        cannot express this — it is all-or-nothing across the whole team — so it
+        is a `security definer` function accepting only the columns a person may
+        change about themselves. Same canonical-path shape as
+        `createAppointment()`
+
+**What this phase does not include.** Anything showing takings, revenue or day
+totals — analytics and financial management, out of v1. Commission and tips —
+out. Announcements and an internal message board — that is the internal notes
+system, out, and it was asked for on 2026-08-22 and declined for that reason.
+Automated messages to customers — DECISIONS #29, and step 8 is the version that
+needs nothing.
 
 ### Phase 6 — Records and permissions
 - [ ] Customer list and detail view
@@ -480,6 +626,37 @@ moment a change would offer something the write path refuses.
 - [ ] Employee list and profiles
 - [ ] Working hours and availability management
 - [ ] Roles and permissions management UI
+- [ ] **The service menu editor** — added 2026-08-22, and it was missing from
+      this phase entirely. Name, price, duration, buffer, lead time, latest
+      booking, active. Behind `service.manage`, so Owner and Manager by default.
+      This is the item with the most immediate cost attached to *not* having it:
+      every price, duration and lead time in the tree today is a guess shaped
+      like a real number, and correcting one when Selam sends the real figures
+      currently means writing SQL
+- [ ] **The service tree editor** — categories, questions, and answers with
+      their price and minute deltas. Same key. Adding a hairstyle, or a new
+      answer to "how long?", should not be a migration
+- [ ] **The stylist matrix** — who leads and who assists which service. The data
+      is `employee_services` and is already seeded from Selam's sheet; two cells
+      in it are still guesses waiting on her, which is exactly the kind of thing
+      a screen fixes in ten seconds and a script does not
+- [ ] **Organization settings** — added 2026-08-22. Name, phone, email, address,
+      opening hours, timezone, social links, and the logo. Behind
+      `organization.edit`, which exists, is held by the Owner alone, and has had
+      no screen behind it since migration 003. Not a CMS: every one of those
+      fields already lives in `organizations` or `public_settings` and is already
+      read live by the public site. This is a form over data we have
+
+      **Where the line falls, decided 2026-08-22.** The ask was for the owner to
+      edit "the website UI too, the colour, the logo, and everything". Settings
+      and logo are in, above. Colours, fonts, page copy, sections and photographs
+      are **out** — that is the CMS, and DECISIONS #11 defers it until the third
+      salon asks. A second reason applies to this salon specifically: the dark
+      and gold direction took three rounds and two rejected looks to arrive at,
+      and a free colour picker is mostly a way to undo that — it is easy to
+      choose two colours that make the text unreadable and not notice on your own
+      screen. If it is wanted later, the safer shape is a handful of curated
+      palettes already checked for contrast, not a colour wheel
 
 ### Phase 7 — Handover
 - [ ] Train the salon staff
@@ -540,6 +717,31 @@ Nothing here gets built until the salon has used v1 for real, for weeks.
       Days to weeks, waiting on someone else's queue, so it is the item to start
       first rather than last
 - [ ] Does the salon have photos for the gallery, or do we need to arrange them?
+- [ ] **Google Calendar sync.** Raised 2026-08-22, parked deliberately until the
+      staff calendar exists. Three different things go by this name. A subscribe
+      link — an `.ics` feed per employee — costs about a day and needs no access
+      to anyone's Google account, but Google refreshes subscribed calendars on
+      its own schedule, often hours late, which for a salon is arguably worse
+      than nothing because they will trust it. Pushing properly through the API
+      appears within seconds and costs a Google Cloud project, an OAuth consent
+      screen, a verification review, token storage and revocation handling.
+      Two-way sync is a third thing and should be refused: it makes Google a
+      second creation path, which breaks the rule the whole architecture rests
+      on, with no conflict detection, no rota check and nothing in the audit log.
+
+      Two things to weigh before any of them. Appointments pushed into personal
+      Google accounts take customer names and phone numbers outside RLS and
+      outside the audit log, into accounts we do not control — solvable by
+      sending "10:00 Knotless braids — S.T." and nothing more, but that is a
+      decision, not a detail. And the reason people want this is usually "I want
+      my day on my phone", which the staff calendar is already being built to do.
+      Ask the team again once they have used it. Whichever way it goes, it is new
+      scope and gets a DECISIONS entry
+- [ ] **A cancellation message to the customer.** Raised 2026-08-22 as a future
+      hook on appointment soft-delete, explicitly not for now. Same obstacles as
+      DECISIONS #29 — 10DLC registration for text, and email being optional on
+      the booking form, so it would reach some customers while looking like it
+      reached all of them
 - [ ] **Does the receptionist get `service.manage`?** Raised 2026-08-20. The
       assumption in conversation was that the owner *and receptionist* can
       change how long a service takes. The database does not allow that today:
