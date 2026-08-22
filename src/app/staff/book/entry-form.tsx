@@ -3,13 +3,18 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import type { LeadEmployee, ServiceQuestion, StaffService } from "@/lib/appointments/menu";
+import type {
+  LeadEmployee,
+  ServiceQuestion,
+  StaffService,
+} from "@/lib/appointments/menu";
 import type { VisitSlot } from "@/lib/appointments/visits";
 import type { KnownCustomer } from "@/lib/customers/find";
 import { salonTime } from "@/lib/site/datetime";
 
 import {
-  loadServiceDetail,
+  loadLeadEmployees,
+  loadQuestions,
   loadSlots,
   loadTotals,
   lookUpCustomer,
@@ -30,6 +35,13 @@ import {
  * back from server actions that ask Postgres. A running total added up in a
  * browser is one that can disagree with the appointment it produces, and one
  * that anybody with dev tools can edit.
+ *
+ * A VISIT IS A LIST, and a list of one is the ordinary case. `visit_id` is set
+ * on every appointment whether it holds one service or three, so there is no
+ * "combined booking" flag and no second code path — the same form takes a trim
+ * and a trim-with-blow-dry. Services run back to back with no buffer between
+ * them, because the buffer resets the station between CUSTOMERS and the same
+ * head does not need cleaning up halfway through.
  */
 
 type Props = {
@@ -37,6 +49,13 @@ type Props = {
   today: string;
   currency: string;
   timezone: string;
+};
+
+/** One service in the visit, with the answers given for it. */
+type Line = {
+  serviceId: string;
+  /** Chosen answers, keyed by question. Several ids only for a `many` question. */
+  answers: Record<string, string[]>;
 };
 
 /** "6h 15m", "45m". Minutes are what the database deals in. */
@@ -55,8 +74,7 @@ function formatMinutes(minutes: number): string {
 export function EntryForm({ services, today, currency, timezone }: Props) {
   const router = useRouter();
 
-  const [serviceId, setServiceId] = useState<string>("");
-  const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [lines, setLines] = useState<Line[]>([{ serviceId: "", answers: {} }]);
   const [date, setDate] = useState(today);
   const [employeeId, setEmployeeId] = useState<string>("");
 
@@ -91,15 +109,18 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
    * PREVIOUS service's questions and prices, which is a wrong answer rather
    * than a slow one.
    *
-   * Keeping the key beside the value fixes both. If the key no longer
-   * matches what is on screen, the value is simply not this question's
-   * answer, and the component says so without anybody having to remember to
-   * clear it. "Loading" then needs no state at all: it IS the state of
-   * having asked something the stored answer does not match.
+   * Keeping the key beside the value fixes both. If the key no longer matches
+   * what is on screen, the value is simply not this question's answer, and the
+   * component says so without anybody having to remember to clear it.
+   * "Loading" then needs no state at all: it IS the state of having asked
+   * something the stored answer does not match.
    */
-  const [detail, setDetail] = useState<{
-    serviceId: string;
-    questions: ServiceQuestion[];
+  const [questionCache, setQuestionCache] = useState<
+    Record<string, ServiceQuestion[]>
+  >({});
+
+  const [employeesFor, setEmployeesFor] = useState<{
+    key: string;
     employees: LeadEmployee[];
   } | null>(null);
 
@@ -134,53 +155,66 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
     [currency],
   );
 
-  /* Memoised because `visibleQuestions` below depends on it, and a fresh []
-     on every render would rebuild that list — and the selection built from
-     it — every time anything on this screen changed. */
-  const questions = useMemo(
-    () => (detail?.serviceId === serviceId ? detail.questions : []),
-    [detail, serviceId],
+  /** The services actually chosen, in the order they will be performed. */
+  const serviceIds = useMemo(
+    () => lines.map((line) => line.serviceId).filter(Boolean),
+    [lines],
   );
 
-  const employees = detail?.serviceId === serviceId ? detail.employees : [];
+  const ready = serviceIds.length === lines.length && serviceIds.length > 0;
+  const serviceKey = serviceIds.join("|");
 
   /*
-   * Only questions whose condition is met. `depends_on_option_id` is the
-   * conditional edge of the tree — "which colour?" appears only once "the
-   * salon provides the hair" has been chosen. One level deep, by design.
+   * Which questions each line shows. `depends_on_option_id` is the conditional
+   * edge of the tree — "which colour?" appears only once "the salon provides
+   * the hair" has been chosen. One level deep, by design.
    */
-  const chosenIds = useMemo(() => Object.values(answers).flat(), [answers]);
-
-  const visibleQuestions = useMemo(
+  const visibleByLine = useMemo(
     () =>
-      questions.filter(
-        (question) =>
-          question.depends_on_option_id === null ||
-          chosenIds.includes(question.depends_on_option_id),
-      ),
-    [questions, chosenIds],
+      lines.map((line) => {
+        const all = questionCache[line.serviceId] ?? [];
+        const given = Object.values(line.answers).flat();
+
+        return all.filter(
+          (question) =>
+            question.depends_on_option_id === null ||
+            given.includes(question.depends_on_option_id),
+        );
+      }),
+    [lines, questionCache],
   );
 
   /*
-   * The selection, in the shape every database function takes. Only answers to
-   * questions still on screen count — answering "which colour", then changing
-   * your mind about whose hair it is, must not leave the colour in the price.
+   * The selection, in the shape every database function takes — one entry per
+   * service, in performance order. Only answers to questions still on screen
+   * count: answering "which colour", then changing your mind about whose hair
+   * it is, must not leave the colour in the price.
    */
-  const selection = useMemo(() => {
-    if (!serviceId) return [];
+  const selection = useMemo(
+    () =>
+      lines.flatMap((line, index) =>
+        line.serviceId
+          ? [
+              {
+                serviceId: line.serviceId,
+                optionIds: (visibleByLine[index] ?? []).flatMap(
+                  (question) => line.answers[question.id] ?? [],
+                ),
+              },
+            ]
+          : [],
+      ),
+    [lines, visibleByLine],
+  );
 
-    const live = visibleQuestions.flatMap(
-      (question) => answers[question.id] ?? [],
-    );
-
-    return [{ serviceId, optionIds: live }];
-  }, [serviceId, visibleQuestions, answers]);
-
-  /* A stable string, so effects fire when the ANSWERS change rather than
-     whenever React rebuilds the array around them. */
+  /* Stable strings, so effects fire when the ANSWERS change rather than
+     whenever React rebuilds the arrays around them. */
   const selectionKey = JSON.stringify(selection);
   const slotsKey = `${date}|${employeeId}|${selectionKey}`;
   const digits = phone.replace(/\D/g, "");
+
+  const employees =
+    employeesFor?.key === serviceKey ? employeesFor.employees : [];
 
   const totals =
     totalsFor?.key === selectionKey
@@ -188,7 +222,7 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
       : { price: 0, minutes: 0 };
 
   const slots = slotsFor?.key === slotsKey ? slotsFor.slots : [];
-  const loadingSlots = serviceId !== "" && slotsFor?.key !== slotsKey;
+  const loadingSlots = ready && slotsFor?.key !== slotsKey;
   const chosen = chosenFor?.key === slotsKey ? chosenFor.slot : null;
 
   const known =
@@ -200,32 +234,47 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
      to retype a name the salon already curated. */
   const effectiveName = name.trim() || known?.full_name || "";
 
-  /* ---- what a service asks, and who can lead it ---- */
+  /* ---- what each service asks. Cached by service, never re-fetched ---- */
   useEffect(() => {
-    if (!serviceId) return;
+    const missing = serviceIds.filter((id) => !(id in questionCache));
+    if (missing.length === 0) return;
 
     let live = true;
 
-    loadServiceDetail(serviceId).then((result) => {
-      if (live) setDetail({ serviceId, ...result });
+    Promise.all(
+      missing.map((id) => loadQuestions(id).then((qs) => [id, qs] as const)),
+    ).then((pairs) => {
+      if (live) {
+        setQuestionCache((current) => ({
+          ...current,
+          ...Object.fromEntries(pairs),
+        }));
+      }
     });
 
     return () => {
       live = false;
     };
-  }, [serviceId]);
+  }, [serviceIds, questionCache]);
 
-  /* Answers belong to the service that asked. Changing service clears them,
-     and this is an event handler rather than an effect for that reason. */
-  function chooseService(id: string) {
-    setServiceId(id);
-    setAnswers({});
-    setEmployeeId("");
-  }
+  /* ---- who can lead all of it ---- */
+  useEffect(() => {
+    if (!ready) return;
+
+    let live = true;
+
+    loadLeadEmployees(serviceIds).then((result) => {
+      if (live) setEmployeesFor({ key: serviceKey, employees: result });
+    });
+
+    return () => {
+      live = false;
+    };
+  }, [ready, serviceKey, serviceIds]);
 
   /* ---- the running total ---- */
   useEffect(() => {
-    if (!serviceId) return;
+    if (!ready) return;
 
     let live = true;
 
@@ -236,16 +285,16 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
     return () => {
       live = false;
     };
-  }, [serviceId, selectionKey]);
+  }, [ready, selectionKey]);
 
   /* ---- suggested times ---- */
   useEffect(() => {
-    if (!serviceId) return;
+    if (!ready) return;
 
     let live = true;
 
     loadSlots({
-      serviceIds: [serviceId],
+      serviceIds,
       date,
       employeeId: employeeId || null,
       selection: JSON.parse(selectionKey),
@@ -256,7 +305,7 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
     return () => {
       live = false;
     };
-  }, [serviceId, date, employeeId, selectionKey, slotsKey]);
+  }, [ready, serviceIds, date, employeeId, selectionKey, slotsKey]);
 
   /* ---- do we know this number? ---- */
   useEffect(() => {
@@ -272,31 +321,65 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
     return () => clearTimeout(timer);
   }, [digits, phone]);
 
-  function toggleAnswer(question: ServiceQuestion, optionId: string) {
-    setAnswers((current) => {
-      const existing = current[question.id] ?? [];
+  /* A stylist chosen for the old list may not lead the new one, so the
+     filter is dropped whenever the services change. */
+  function setLine(index: number, serviceId: string) {
+    setLines((current) =>
+      current.map((line, i) =>
+        i === index ? { serviceId, answers: {} } : line,
+      ),
+    );
+    setEmployeeId("");
+  }
 
-      if (question.selection === "many") {
-        return {
-          ...current,
-          [question.id]: existing.includes(optionId)
-            ? existing.filter((id) => id !== optionId)
-            : [...existing, optionId],
-        };
-      }
+  function addLine() {
+    setLines((current) => [...current, { serviceId: "", answers: {} }]);
+    setEmployeeId("");
+  }
 
-      // A single-answer question toggles off when its own answer is tapped
-      // again, so a non-required question can be un-answered.
-      return {
-        ...current,
-        [question.id]: existing.includes(optionId) ? [] : [optionId],
-      };
-    });
+  function removeLine(index: number) {
+    setLines((current) =>
+      current.length === 1
+        ? current
+        : current.filter((_, i) => i !== index),
+    );
+    setEmployeeId("");
+  }
+
+  function toggleAnswer(
+    index: number,
+    question: ServiceQuestion,
+    optionId: string,
+  ) {
+    setLines((current) =>
+      current.map((line, i) => {
+        if (i !== index) return line;
+
+        const existing = line.answers[question.id] ?? [];
+
+        const next =
+          question.selection === "many"
+            ? existing.includes(optionId)
+              ? existing.filter((id) => id !== optionId)
+              : [...existing, optionId]
+            : // A single-answer question toggles off when its own answer is
+              // tapped again, so a non-required question can be un-answered.
+              existing.includes(optionId)
+              ? []
+              : [optionId];
+
+        return { ...line, answers: { ...line.answers, [question.id]: next } };
+      }),
+    );
   }
 
   function book() {
     setError(null);
 
+    if (!ready) {
+      setError("Choose a service.");
+      return;
+    }
     if (manualOn && !manualTime) {
       setError("Type a time, or turn the override off.");
       return;
@@ -310,11 +393,25 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
       return;
     }
 
+    /*
+     * Who leads each service. A suggested slot already says — its assignment
+     * carries one `lead` row per service, in performance order, alongside the
+     * `finish` rows nobody picks. A time set by hand has no assignment, so the
+     * one named stylist takes the whole visit, which is the single-employee
+     * form create_appointment() accepts.
+     */
+    const employeeIds =
+      manualOn || !chosen
+        ? [employeeId]
+        : chosen.assignment
+            .filter((row) => row.phase === "lead")
+            .map((row) => row.employee_id);
+
     startSaving(async () => {
       const result = await submitBooking({
-        serviceIds: [serviceId],
-        employeeIds: [manualOn ? employeeId : chosen!.employeeId],
-        startsAt: manualOn ? "" : chosen!.startsAt,
+        serviceIds,
+        employeeIds,
+        startsAt: manualOn || !chosen ? "" : chosen.startsAt,
         manual: manualOn ? { date, time: manualTime } : null,
         selection: JSON.parse(selectionKey),
         customerName: effectiveName,
@@ -337,75 +434,112 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
   }
 
   const employeeName = (id: string) =>
-    employees.find((employee) => employee.id === id)?.full_name ?? "—";
+    employees.find((employee) => employee.id === id)?.full_name ?? "Assistant";
+
+  const serviceName = (id: string) =>
+    services.find((service) => service.id === id)?.name ?? "—";
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
       <div className="flex flex-col gap-6">
-        {/* ---------- the service ---------- */}
+        {/* ---------- the services ---------- */}
         <section className="border border-line">
           <h2 className="border-b border-line bg-surface-sunk px-4 py-2.5 font-medium">
-            Service
+            Services
           </h2>
 
-          <div className="p-4">
-            <select
-              value={serviceId}
-              onChange={(event) => chooseService(event.target.value)}
-              className="w-full border border-line bg-surface px-3 py-2"
-            >
-              <option value="">Choose a service…</option>
-              {services.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.name}
-                  {service.category ? ` — ${service.category}` : ""}
-                </option>
-              ))}
-            </select>
+          <div className="divide-y divide-line">
+            {lines.map((line, index) => (
+              <div key={index} className="p-4">
+                <div className="flex items-center gap-3">
+                  <select
+                    value={line.serviceId}
+                    onChange={(event) => setLine(index, event.target.value)}
+                    className="w-full border border-line bg-surface px-3 py-2"
+                  >
+                    <option value="">Choose a service…</option>
+                    {services.map((service) => (
+                      <option key={service.id} value={service.id}>
+                        {service.name}
+                        {service.category ? ` — ${service.category}` : ""}
+                      </option>
+                    ))}
+                  </select>
 
-            {/* Every question the chosen style asks, in the salon's order. */}
-            {visibleQuestions.map((question) => (
-              <fieldset key={question.id} className="mt-5">
-                <legend className="label text-ink-muted">
-                  {question.prompt}
-                  {!question.is_required && (
-                    <span className="normal-case"> (optional)</span>
+                  {lines.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeLine(index)}
+                      aria-label={`Remove ${serviceName(line.serviceId)}`}
+                      className="shrink-0 border border-line px-3 py-2 text-sm text-ink-muted transition-colors hover:border-ink hover:text-ink"
+                    >
+                      Remove
+                    </button>
                   )}
-                </legend>
-
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {question.options.map((option) => {
-                    const picked = (answers[question.id] ?? []).includes(
-                      option.id,
-                    );
-
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        aria-pressed={picked}
-                        onClick={() => toggleAnswer(question, option.id)}
-                        className={`border px-3 py-2 text-sm transition-colors ${
-                          picked
-                            ? "border-brand bg-brand text-ink-inverse"
-                            : "border-line hover:border-ink"
-                        }`}
-                      >
-                        {option.name}
-                        {option.duration_delta_minutes !== 0 && (
-                          <span className="ml-2 text-xs opacity-70">
-                            {option.duration_delta_minutes > 0 ? "+" : ""}
-                            {formatMinutes(
-                              Math.abs(option.duration_delta_minutes),
-                            )}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
                 </div>
-              </fieldset>
+
+                {/* Every question this style asks, in the salon's order. */}
+                {(visibleByLine[index] ?? []).map((question) => (
+                  <fieldset key={question.id} className="mt-5">
+                    <legend className="label text-ink-muted">
+                      {question.prompt}
+                      {!question.is_required && (
+                        <span className="normal-case"> (optional)</span>
+                      )}
+                    </legend>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {question.options.map((option) => {
+                        const picked = (
+                          line.answers[question.id] ?? []
+                        ).includes(option.id);
+
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            aria-pressed={picked}
+                            onClick={() =>
+                              toggleAnswer(index, question, option.id)
+                            }
+                            className={`border px-3 py-2 text-sm transition-colors ${
+                              picked
+                                ? "border-brand bg-brand text-ink-inverse"
+                                : "border-line hover:border-ink"
+                            }`}
+                          >
+                            {option.name}
+                            {option.duration_delta_minutes !== 0 && (
+                              <span className="ml-2 text-xs opacity-70">
+                                {option.duration_delta_minutes > 0 ? "+" : ""}
+                                {formatMinutes(
+                                  Math.abs(option.duration_delta_minutes),
+                                )}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                ))}
+              </div>
             ))}
+          </div>
+
+          {/*
+            Several services for one customer, run back to back. No buffer
+            between them — the buffer resets the station between customers,
+            and the same head does not need cleaning up halfway through.
+          */}
+          <div className="border-t border-line p-4">
+            <button
+              type="button"
+              onClick={addLine}
+              className="label text-ink-muted transition-colors hover:text-ink"
+            >
+              + Add another service
+            </button>
           </div>
         </section>
 
@@ -441,6 +575,15 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
                     </option>
                   ))}
                 </select>
+                {/* Only people who lead EVERY service in the visit. A stylist
+                    who does the blow dry but not the trim would return no
+                    times rather than an explanation. */}
+                {ready && employees.length === 0 && (
+                  <span className="text-xs text-brand">
+                    Nobody leads all of these together. Book them separately,
+                    or set the time yourself.
+                  </span>
+                )}
               </label>
             </div>
 
@@ -490,7 +633,7 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
               </div>
             )}
 
-            {!serviceId ? (
+            {!ready ? (
               <p className="text-sm text-ink-muted">
                 Choose a service to see times.
               </p>
@@ -498,12 +641,14 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
               <p className="text-sm text-ink-muted">Looking…</p>
             ) : slots.length === 0 ? (
               <p className="text-sm text-ink-muted">
-                No times that day. Try another day, or another stylist.
+                No times that day. Try another day, another stylist, or set the
+                time yourself.
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {slots.map((slot) => {
-                  const picked = chosen?.startsAt === slot.startsAt &&
+                  const picked =
+                    chosen?.startsAt === slot.startsAt &&
                     chosen?.employeeId === slot.employeeId;
 
                   return (
@@ -674,9 +819,13 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
               <ul className="mt-2 space-y-1">
                 {chosen.assignment.map((row, index) => (
                   <li key={index} className="flex justify-between gap-3">
-                    <span>{employeeName(row.employee_id)}</span>
-                    <span className="text-ink-muted">
-                      {row.phase === "lead" ? "founding" : "finishing"}
+                    <span className="truncate">
+                      {serviceName(row.service_id)}
+                    </span>
+                    <span className="shrink-0 text-ink-muted">
+                      {row.phase === "lead"
+                        ? employeeName(row.employee_id)
+                        : "finishing"}
                     </span>
                   </li>
                 ))}
@@ -685,7 +834,10 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
           )}
 
           {error && (
-            <p role="alert" className="border-t border-line px-4 py-3 text-sm text-brand">
+            <p
+              role="alert"
+              className="border-t border-line px-4 py-3 text-sm text-brand"
+            >
               {error}
             </p>
           )}
@@ -694,7 +846,11 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
             <button
               type="button"
               onClick={book}
-              disabled={saving || (manualOn ? !manualTime || !employeeId : !chosen)}
+              disabled={
+                saving ||
+                !ready ||
+                (manualOn ? !manualTime || !employeeId : !chosen)
+              }
               className="btn w-full bg-brand text-ink-inverse hover:bg-brand-strong disabled:opacity-40"
             >
               {saving ? "Booking…" : "Book it"}

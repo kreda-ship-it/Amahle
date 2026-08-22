@@ -3,7 +3,7 @@
 import { requirePermission } from "@/lib/auth";
 import { createAppointment } from "@/lib/appointments/create";
 import {
-  getLeadEmployees,
+  getLeadEmployeesForAll,
   getServiceQuestions,
   type LeadEmployee,
   type ServiceQuestion,
@@ -35,25 +35,33 @@ import { getOrganization } from "@/lib/site/organization";
  * navigation between steps would be an obstacle rather than a feature.
  */
 
-export type QuestionsResult = {
-  questions: ServiceQuestion[];
-  employees: LeadEmployee[];
-};
-
-/** What a service asks, and who can lead it. One round trip, both answers. */
-export async function loadServiceDetail(
+/**
+ * What one service asks.
+ *
+ * Fetched per service rather than per visit, and cached by the form against
+ * the service id, because a visit is a list and the same style may appear in
+ * it twice — "a trim for her and a trim for her sister" is two lines asking
+ * one set of questions.
+ */
+export async function loadQuestions(
   serviceId: string,
-): Promise<QuestionsResult> {
+): Promise<ServiceQuestion[]> {
   await requirePermission("appointment.create");
 
   const org = await getOrganization();
 
-  const [questions, employees] = await Promise.all([
-    getServiceQuestions(org.id, serviceId),
-    getLeadEmployees(org.id, serviceId),
-  ]);
+  return getServiceQuestions(org.id, serviceId);
+}
 
-  return { questions, employees };
+/** Who can lead every service in the visit — see the note on the query. */
+export async function loadLeadEmployees(
+  serviceIds: string[],
+): Promise<LeadEmployee[]> {
+  await requirePermission("appointment.create");
+
+  const org = await getOrganization();
+
+  return getLeadEmployeesForAll(org.id, serviceIds);
 }
 
 /** The running total, recomputed by the database on every answer. */

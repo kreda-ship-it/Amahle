@@ -173,10 +173,16 @@ export async function getServiceQuestions(
 }
 
 /**
- * Who may LEAD this service — the only choice the form gets to make.
+ * Who may lead EVERY one of these services — the only staffing choice the form
+ * gets to make.
+ *
+ * All, not any. A visit is booked as a run of services and `get_visit_slots()`
+ * applies its `p_employee_id` filter to each one in turn, so a stylist who
+ * does the blow dry but not the trim cannot be "the person for this visit" —
+ * asking for her returns no times at all rather than an explanation.
  *
  * `create_appointment()` refuses a lead without a live `employee_services` row
- * at `role = 'lead'`, for staff bookings exactly as for online ones. So a
+ * at `role = 'lead'`, for staff bookings exactly as for online ones. A
  * dropdown built from anything looser would offer people the database then
  * rejects, and the receptionist would meet "that member of staff does not
  * perform one of those services" after typing everything else.
@@ -184,29 +190,67 @@ export async function getServiceQuestions(
  * The finishers are deliberately absent. They are chosen inside
  * `create_appointment()` at write time, because minutes pass between somebody
  * seeing a time and pressing the button. Nobody picks them, here or anywhere.
+ *
+ * There is no single-service variant, deliberately. Passing one id does the
+ * same job, and a visit is always a list — a list of one being the ordinary
+ * case rather than a special one. A second function for that is the second
+ * path this codebase keeps refusing to grow.
+ *
+ * Note this constrains only who may be CHOSEN. Left to itself the database is
+ * content to give two services to two different leads, and merely prefers to
+ * keep one person across a visit.
  */
-export async function getLeadEmployees(
+export async function getLeadEmployeesForAll(
   orgId: string,
-  serviceId: string,
+  serviceIds: string[],
 ): Promise<LeadEmployee[]> {
+  if (serviceIds.length === 0) return [];
+
   const supabase = await createSupabaseServerClient();
+  const wanted = new Set(serviceIds);
 
   const { data, error } = await supabase
     .from("employee_services")
-    .select("employees!inner(id, full_name, is_bookable, is_active, display_order)")
+    .select(
+      "service_id, employees!inner(id, full_name, is_bookable, is_active, display_order)",
+    )
     .eq("org_id", orgId)
-    .eq("service_id", serviceId)
     .eq("role", "lead")
+    .in("service_id", [...wanted])
     .is("deleted_at", null);
 
   if (error) {
-    console.error("getLeadEmployees failed", error);
+    console.error("getLeadEmployeesForAll failed", error);
     return [];
   }
 
-  return (data ?? [])
-    .map((row) => row.employees)
-    .filter((employee) => employee && employee.is_active && employee.is_bookable)
-    .sort((a, b) => a.display_order - b.display_order)
-    .map((employee) => ({ id: employee.id, full_name: employee.full_name }));
+  const covers = new Map<
+    string,
+    { employee: LeadEmployee & { order: number }; services: Set<string> }
+  >();
+
+  for (const row of data ?? []) {
+    const employee = row.employees;
+    if (!employee || !employee.is_active || !employee.is_bookable) continue;
+
+    const existing = covers.get(employee.id);
+
+    if (existing) {
+      existing.services.add(row.service_id);
+    } else {
+      covers.set(employee.id, {
+        employee: {
+          id: employee.id,
+          full_name: employee.full_name,
+          order: employee.display_order,
+        },
+        services: new Set([row.service_id]),
+      });
+    }
+  }
+
+  return [...covers.values()]
+    .filter((entry) => entry.services.size === wanted.size)
+    .sort((a, b) => a.employee.order - b.employee.order)
+    .map(({ employee }) => ({ id: employee.id, full_name: employee.full_name }));
 }
