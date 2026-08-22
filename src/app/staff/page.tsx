@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { can, requireProfile } from "@/lib/auth";
-import { signOut } from "@/lib/auth/actions";
 import {
   salonDateKey,
   salonDayLabelLong,
@@ -31,9 +30,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * code. There is no `if (role === …)` on this page and there must not be.
  */
 
+/* `robots` is not repeated here — the staff layout marks the whole area
+   noindex, so every page in it is covered including the ones not built yet. */
 export const metadata: Metadata = {
   title: "The day",
-  robots: { index: false, follow: false },
 };
 
 /* Never cached: a day view showing a booking taken ten minutes ago is worse
@@ -70,7 +70,10 @@ export default async function StaffDayPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const profile = await requireProfile();
+  /* The page guards itself. The layout calls this too, but a layout is not
+     re-run on every navigation, so it cannot be the check that counts. */
+  await requireProfile();
+
   const params = await searchParams;
   const org = await getOrganization();
   const supabase = await createSupabaseServerClient();
@@ -153,6 +156,15 @@ export default async function StaffDayPage({
           <h1 className="mt-1 font-display text-3xl">
             {salonDayLabelLong(day)}
           </h1>
+
+          {/* Moved up from the footer when the footer moved into the layout.
+              It belongs beside the date anyway — it is a fact about this day,
+              not about the person reading it. */}
+          {cancelled > 0 && (
+            <p className="mt-1 text-sm text-ink-muted">
+              {cancelled} cancelled {cancelled === 1 ? "row" : "rows"} hidden
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-2 text-sm">
@@ -269,26 +281,6 @@ export default async function StaffDayPage({
           ))}
         </div>
       )}
-
-      <footer className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t border-line pt-4 text-sm text-ink-muted">
-        <p>
-          {profile.full_name} · {profile.role.display_name}
-          {cancelled > 0 && (
-            <span className="ml-3">
-              {cancelled} cancelled {cancelled === 1 ? "row" : "rows"} hidden
-            </span>
-          )}
-        </p>
-
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="underline underline-offset-4 transition-colors hover:text-ink"
-          >
-            Sign out
-          </button>
-        </form>
-      </footer>
     </div>
   );
 }
