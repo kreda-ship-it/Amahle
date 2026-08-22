@@ -56,18 +56,9 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
   const router = useRouter();
 
   const [serviceId, setServiceId] = useState<string>("");
-  const [questions, setQuestions] = useState<ServiceQuestion[]>([]);
-  const [employees, setEmployees] = useState<LeadEmployee[]>([]);
-  /** Chosen answers, keyed by question. Several ids only for a `many` question. */
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
-
-  const [totals, setTotals] = useState({ price: 0, minutes: 0 });
-
   const [date, setDate] = useState(today);
   const [employeeId, setEmployeeId] = useState<string>("");
-  const [slots, setSlots] = useState<VisitSlot[]>([]);
-  const [chosen, setChosen] = useState<VisitSlot | null>(null);
-  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -75,10 +66,63 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
   const [forName, setForName] = useState("");
   const [notes, setNotes] = useState("");
   const [requested, setRequested] = useState(false);
-  const [known, setKnown] = useState<KnownCustomer | null>(null);
+
+  /*
+   * The squeeze-you-in case. A receptionist knows things the rota does not —
+   * that a stylist agreed to stay late, that the customer is already sitting
+   * in the shop. create_appointment() lets a STAFF booking past the rota, the
+   * lead's availability and even the present moment, so the form has to let
+   * her say so. Off by default: the suggestions are right nearly always, and
+   * a form that opened on the override would train people to ignore them.
+   */
+  const [manualOn, setManualOn] = useState(false);
+  const [manualTime, setManualTime] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
+
+  /*
+   * EVERY FETCHED THING IS STORED WITH THE QUESTION IT ANSWERS.
+   *
+   * The obvious shape — a state variable per answer, cleared in an effect
+   * when the question changes — has two faults. It calls setState
+   * synchronously inside an effect, which React now warns about because it
+   * cascades renders; and between the change and the clear it shows the
+   * PREVIOUS service's questions and prices, which is a wrong answer rather
+   * than a slow one.
+   *
+   * Keeping the key beside the value fixes both. If the key no longer
+   * matches what is on screen, the value is simply not this question's
+   * answer, and the component says so without anybody having to remember to
+   * clear it. "Loading" then needs no state at all: it IS the state of
+   * having asked something the stored answer does not match.
+   */
+  const [detail, setDetail] = useState<{
+    serviceId: string;
+    questions: ServiceQuestion[];
+    employees: LeadEmployee[];
+  } | null>(null);
+
+  const [totalsFor, setTotalsFor] = useState<{
+    key: string;
+    price: number;
+    minutes: number;
+  } | null>(null);
+
+  const [slotsFor, setSlotsFor] = useState<{
+    key: string;
+    slots: VisitSlot[];
+  } | null>(null);
+
+  const [chosenFor, setChosenFor] = useState<{
+    key: string;
+    slot: VisitSlot;
+  } | null>(null);
+
+  const [knownFor, setKnownFor] = useState<{
+    digits: string;
+    customer: KnownCustomer | null;
+  } | null>(null);
 
   const money = useMemo(
     () =>
@@ -89,6 +133,16 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
       }),
     [currency],
   );
+
+  /* Memoised because `visibleQuestions` below depends on it, and a fresh []
+     on every render would rebuild that list — and the selection built from
+     it — every time anything on this screen changed. */
+  const questions = useMemo(
+    () => (detail?.serviceId === serviceId ? detail.questions : []),
+    [detail, serviceId],
+  );
+
+  const employees = detail?.serviceId === serviceId ? detail.employees : [];
 
   /*
    * Only questions whose condition is met. `depends_on_option_id` is the
@@ -125,23 +179,35 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
   /* A stable string, so effects fire when the ANSWERS change rather than
      whenever React rebuilds the array around them. */
   const selectionKey = JSON.stringify(selection);
+  const slotsKey = `${date}|${employeeId}|${selectionKey}`;
+  const digits = phone.replace(/\D/g, "");
+
+  const totals =
+    totalsFor?.key === selectionKey
+      ? { price: totalsFor.price, minutes: totalsFor.minutes }
+      : { price: 0, minutes: 0 };
+
+  const slots = slotsFor?.key === slotsKey ? slotsFor.slots : [];
+  const loadingSlots = serviceId !== "" && slotsFor?.key !== slotsKey;
+  const chosen = chosenFor?.key === slotsKey ? chosenFor.slot : null;
+
+  const known =
+    digits.length >= 7 && knownFor?.digits === digits ? knownFor.customer : null;
+
+  /* The salon's own spelling of a name we already hold, used when the box is
+     left empty. find_or_create_customer() fills blanks and never overwrites,
+     so sending it back is a no-op — this is so the receptionist does not have
+     to retype a name the salon already curated. */
+  const effectiveName = name.trim() || known?.full_name || "";
 
   /* ---- what a service asks, and who can lead it ---- */
   useEffect(() => {
-    if (!serviceId) {
-      setQuestions([]);
-      setEmployees([]);
-      return;
-    }
+    if (!serviceId) return;
 
     let live = true;
 
-    loadServiceDetail(serviceId).then((detail) => {
-      if (!live) return;
-      setQuestions(detail.questions);
-      setEmployees(detail.employees);
-      setAnswers({});
-      setEmployeeId("");
+    loadServiceDetail(serviceId).then((result) => {
+      if (live) setDetail({ serviceId, ...result });
     });
 
     return () => {
@@ -149,17 +215,22 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
     };
   }, [serviceId]);
 
+  /* Answers belong to the service that asked. Changing service clears them,
+     and this is an event handler rather than an effect for that reason. */
+  function chooseService(id: string) {
+    setServiceId(id);
+    setAnswers({});
+    setEmployeeId("");
+  }
+
   /* ---- the running total ---- */
   useEffect(() => {
-    if (!serviceId) {
-      setTotals({ price: 0, minutes: 0 });
-      return;
-    }
+    if (!serviceId) return;
 
     let live = true;
 
     loadTotals(JSON.parse(selectionKey)).then((result) => {
-      if (live) setTotals(result);
+      if (live) setTotalsFor({ key: selectionKey, ...result });
     });
 
     return () => {
@@ -169,54 +240,37 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
 
   /* ---- suggested times ---- */
   useEffect(() => {
-    if (!serviceId) {
-      setSlots([]);
-      return;
-    }
+    if (!serviceId) return;
 
     let live = true;
-    setLoadingSlots(true);
-    setChosen(null);
 
     loadSlots({
       serviceIds: [serviceId],
       date,
       employeeId: employeeId || null,
       selection: JSON.parse(selectionKey),
-    })
-      .then((result) => {
-        if (live) setSlots(result);
-      })
-      .finally(() => {
-        if (live) setLoadingSlots(false);
-      });
+    }).then((result) => {
+      if (live) setSlotsFor({ key: slotsKey, slots: result });
+    });
 
     return () => {
       live = false;
     };
-  }, [serviceId, date, employeeId, selectionKey]);
+  }, [serviceId, date, employeeId, selectionKey, slotsKey]);
 
   /* ---- do we know this number? ---- */
   useEffect(() => {
-    if (phone.replace(/\D/g, "").length < 7) {
-      setKnown(null);
-      return;
-    }
+    if (digits.length < 7) return;
 
     // Debounced: a lookup per keystroke would be a query per keystroke.
     const timer = setTimeout(() => {
-      lookUpCustomer(phone).then(setKnown);
+      lookUpCustomer(phone).then((customer) =>
+        setKnownFor({ digits, customer }),
+      );
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [phone]);
-
-  /* Offer the salon's spelling of a name we already hold, rather than
-     overwriting what is being typed. The database would keep its own version
-     anyway; this stops the receptionist thinking she created someone new. */
-  useEffect(() => {
-    if (known && !name.trim()) setName(known.full_name);
-  }, [known, name]);
+  }, [digits, phone]);
 
   function toggleAnswer(question: ServiceQuestion, optionId: string) {
     setAnswers((current) => {
@@ -243,7 +297,15 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
   function book() {
     setError(null);
 
-    if (!chosen) {
+    if (manualOn && !manualTime) {
+      setError("Type a time, or turn the override off.");
+      return;
+    }
+    if (manualOn && !employeeId) {
+      setError("Choose who is doing it — a time you set yourself needs a name.");
+      return;
+    }
+    if (!manualOn && !chosen) {
       setError("Choose a time.");
       return;
     }
@@ -251,10 +313,11 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
     startSaving(async () => {
       const result = await submitBooking({
         serviceIds: [serviceId],
-        employeeIds: [chosen.employeeId],
-        startsAt: chosen.startsAt,
+        employeeIds: [manualOn ? employeeId : chosen!.employeeId],
+        startsAt: manualOn ? "" : chosen!.startsAt,
+        manual: manualOn ? { date, time: manualTime } : null,
         selection: JSON.parse(selectionKey),
-        customerName: name,
+        customerName: effectiveName,
         customerPhone: phone,
         customerEmail: email || null,
         forName: forName || null,
@@ -288,7 +351,7 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
           <div className="p-4">
             <select
               value={serviceId}
-              onChange={(event) => setServiceId(event.target.value)}
+              onChange={(event) => chooseService(event.target.value)}
               className="w-full border border-line bg-surface px-3 py-2"
             >
               <option value="">Choose a service…</option>
@@ -381,6 +444,52 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
               </label>
             </div>
 
+            {/*
+              The override. Everything below it is still shown — the
+              suggestions stay on screen so the receptionist can see what she
+              is overruling rather than losing it the moment she ticks the box.
+            */}
+            <label className="flex items-center gap-2 border-t border-line pt-4 text-sm">
+              <input
+                type="checkbox"
+                checked={manualOn}
+                onChange={(event) => setManualOn(event.target.checked)}
+              />
+              <span>Set the time myself</span>
+            </label>
+
+            {manualOn && (
+              <div className="flex flex-col gap-3 border border-line bg-surface-sunk p-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-ink-muted">Time</span>
+                    <input
+                      type="time"
+                      value={manualTime}
+                      onChange={(event) => setManualTime(event.target.value)}
+                      className="border border-line bg-surface px-3 py-2 tabular-nums"
+                    />
+                  </label>
+
+                  <p className="flex-1 text-xs text-ink-muted">
+                    {employeeId ? (
+                      <>
+                        {`${employeeName(employeeId)} on ${date} at ${manualTime || "—"}. `}
+                        The rota, the opening hours and the lead time are all
+                        skipped. A clash with another appointment is still
+                        refused, and so is a braid nobody is free to finish.
+                      </>
+                    ) : (
+                      <span className="text-brand">
+                        Choose who is doing it above — a time you set yourself
+                        has no stylist attached to it.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {!serviceId ? (
               <p className="text-sm text-ink-muted">
                 Choose a service to see times.
@@ -402,7 +511,7 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
                       key={`${slot.startsAt}-${slot.employeeId}`}
                       type="button"
                       aria-pressed={picked}
-                      onClick={() => setChosen(slot)}
+                      onClick={() => setChosenFor({ key: slotsKey, slot })}
                       className={`border px-3 py-2 text-sm tabular-nums transition-colors ${
                         picked
                           ? "border-brand bg-brand text-ink-inverse"
@@ -453,6 +562,12 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
+                /* A known customer's name shows as a placeholder rather than
+                   being typed into the box. Filling it in would overwrite
+                   whatever the receptionist was midway through typing, and
+                   leaving it empty books them under the name the salon
+                   already holds. */
+                placeholder={known?.full_name ?? ""}
                 autoComplete="off"
                 className="border border-line bg-surface px-3 py-2"
               />
@@ -533,7 +648,11 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
             <div className="flex justify-between gap-4 px-4 py-3">
               <dt className="text-ink-muted">Starts</dt>
               <dd className="tabular-nums">
-                {chosen ? salonTime(chosen.startsAt, timezone) : "—"}
+                {manualOn
+                  ? manualTime || "—"
+                  : chosen
+                    ? salonTime(chosen.startsAt, timezone)
+                    : "—"}
               </dd>
             </div>
           </dl>
@@ -575,7 +694,7 @@ export function EntryForm({ services, today, currency, timezone }: Props) {
             <button
               type="button"
               onClick={book}
-              disabled={saving || !chosen}
+              disabled={saving || (manualOn ? !manualTime || !employeeId : !chosen)}
               className="btn w-full bg-brand text-ink-inverse hover:bg-brand-strong disabled:opacity-40"
             >
               {saving ? "Booking…" : "Book it"}

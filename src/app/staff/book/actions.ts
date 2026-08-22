@@ -15,6 +15,7 @@ import {
   type VisitSlot,
 } from "@/lib/appointments/visits";
 import { findCustomerByPhone, type KnownCustomer } from "@/lib/customers/find";
+import { salonInstant } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 
 /**
@@ -131,7 +132,15 @@ export type BookResult =
 export async function submitBooking(input: {
   serviceIds: string[];
   employeeIds: string[];
+  /** From a suggested slot. Empty when the time was typed by hand. */
   startsAt: string;
+  /**
+   * A time the receptionist set herself, in the salon's own clock — the
+   * squeeze-you-in case. Converted to a real instant here rather than in the
+   * browser, because which instant "18:45 on the 25th" is depends on the
+   * salon's timezone and on which side of a clock change it falls.
+   */
+  manual: { date: string; time: string } | null;
   selection: VisitSelection[];
   customerName: string;
   customerPhone: string;
@@ -158,15 +167,30 @@ export async function submitBooking(input: {
   if (!input.customerPhone.trim()) {
     return { ok: false, message: "Enter the customer's phone number." };
   }
-  if (!input.startsAt) {
-    return { ok: false, message: "Choose a time." };
+  /*
+   * A typed time needs a named person. A suggested slot carries the stylist
+   * it belongs to; a time nobody offered belongs to nobody, and
+   * create_appointment() has to be told who is doing the work.
+   */
+  const startsAt = input.manual
+    ? salonInstant(input.manual.date, input.manual.time, org.timezone)
+    : input.startsAt;
+
+  if (!startsAt) {
+    return { ok: false, message: "Choose a time, or set one yourself." };
+  }
+  if (input.manual && input.employeeIds.some((id) => !id)) {
+    return {
+      ok: false,
+      message: "Choose who is doing it — a time you set yourself needs a name.",
+    };
   }
 
   const result = await createAppointment({
     organizationId: org.id,
     serviceIds: input.serviceIds,
     employeeIds: input.employeeIds,
-    startsAt: input.startsAt,
+    startsAt,
     selection: input.selection,
     customerName: input.customerName.trim(),
     customerPhone: input.customerPhone.trim(),
@@ -188,7 +212,7 @@ export async function submitBooking(input: {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date(input.startsAt));
+  }).format(new Date(startsAt));
 
   return { ok: true, visitId: result.visitId, date };
 }
