@@ -1,146 +1,167 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { can, requireProfile } from "@/lib/auth";
-import { salonDateKey, salonDayLabelLong } from "@/lib/site/datetime";
+import { requireProfile } from "@/lib/auth";
+import { salonDateKey, salonDayLabelLong, salonTime } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-import { DayBoard, type Row } from "./day-board";
-
 /**
- * The salon's day.
+ * Where the staff area opens.
  *
- * The screen that is open all day, so it answers the questions somebody
- * standing at the desk actually has: who is with whom, who is free, and what
- * is coming. Everything else in the staff area hangs off this.
+ * Operational, not analytical. Takings, trends and busiest-stylist charts are
+ * the analytics dashboard PROJECT.md rules out of v1 — this answers the three
+ * questions somebody actually has on walking in: how busy is today, who is in
+ * a chair right now, and what is next.
  *
- * WHAT MAKES THIS HARDER THAN A LIST OF APPOINTMENTS. Since migration 033 a
- * single braid is two or three rows across two or three people — the stylist
- * founds it, an assistant finishes it. Shown flat, one customer looks like
- * three bookings and the day looks twice as busy as it is. So rows are grouped
- * by visit, and the phase is on the face of each one.
- *
- * WHO SEES WHAT IS NOT DECIDED HERE. The query asks for the day; row-level
- * security decides what comes back. `appointments_select` is
- * `appointment.view_all OR employee_id = current_employee_id()`, so a stylist
- * gets their own column and a receptionist gets the salon, from the same code.
- * There is no `if (role === …)` on this page and there must not be.
- *
- * The rendering moved into `DayBoard` when marking arrived — a highlighter and
- * an undo strip are interactive, and this half is not. Fetching stays here so
- * the query, and the security that governs it, remain on the server.
+ * Everything here is a count of the same rows the day view shows, and it is
+ * scoped by the same row-level security. A stylist sees their own day summed
+ * up; a receptionist sees the salon's.
  */
 
-/* `robots` is not repeated here — the staff layout marks the whole area
-   noindex, so every page in it is covered including the ones not built yet. */
 export const metadata: Metadata = {
-  title: "The day",
+  title: "Dashboard",
+  robots: { index: false, follow: false },
 };
 
-/* Never cached: a day view showing a booking taken ten minutes ago is worse
-   than no day view, because somebody will trust it. */
 export const dynamic = "force-dynamic";
 
-/** Yesterday or tomorrow, as a date key the URL can carry. */
-function shiftDay(dateKey: string, days: number): string {
-  const [y, m, d] = dateKey.split("-").map(Number);
-  const when = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1));
-  when.setUTCDate(when.getUTCDate() + days);
+type Row = {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  phase: string;
+  status: string;
+  employee: { full_name: string } | null;
+  service: { name: string } | null;
+  customer: { full_name: string } | null;
+};
 
-  return when.toISOString().slice(0, 10);
-}
-
-export default async function StaffDayPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | undefined>>;
-}) {
-  /* The page guards itself. The layout calls this too, but a layout is not
-     re-run on every navigation, so it cannot be the check that counts. */
-  await requireProfile();
-
-  const params = await searchParams;
+export default async function StaffDashboard() {
+  const profile = await requireProfile();
   const org = await getOrganization();
   const supabase = await createSupabaseServerClient();
 
-  const [seesEverything, mayManage] = await Promise.all([
-    can("appointment.view_all"),
-    can("appointment.manage"),
-  ]);
-
   const today = salonDateKey(new Date(), org.timezone);
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? "")
-    ? (params.date as string)
-    : today;
 
-  /*
-   * A day in the salon's own timezone, not the server's. The salon opens at
-   * nine in Maryland whatever the machine running this thinks the time is —
-   * and the boundaries of "today" move with the clocks twice a year.
-   */
-  const from = new Date(`${day}T00:00:00`);
-  const to = new Date(`${day}T23:59:59`);
-
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("appointments")
     .select(
-      `id, visit_id, starts_at, ends_at, phase, status, employee_requested,
-       for_name, notes,
-       employee:employees (id, full_name),
+      `id, starts_at, ends_at, phase, status,
+       employee:employees (full_name),
        service:services (name),
-       customer:customers (full_name, phone)`,
+       customer:customers (full_name)`,
     )
-    .gte("starts_at", from.toISOString())
-    .lte("starts_at", to.toISOString())
-    .is("deleted_at", null)
+    .gte("starts_at", new Date(`${today}T00:00:00`).toISOString())
+    .lte("starts_at", new Date(`${today}T23:59:59`).toISOString())
     .order("starts_at");
 
-  const rows = (data ?? []) as unknown as Row[];
+  const rows = ((data ?? []) as unknown as Row[]).filter(
+    (row) => row.status !== "cancelled" && row.status !== "no_show",
+  );
+
+  // Per-request, deliberately: what is happening right now is the question.
+  const now = new Date().getTime();
+  const inChair = rows.filter(
+    (row) =>
+      new Date(row.starts_at).getTime() <= now &&
+      new Date(row.ends_at).getTime() > now,
+  );
+  const next = rows.filter((row) => new Date(row.starts_at).getTime() > now);
+
+  /*
+   * Visits, not rows. One braid is a founding and a finishing, and counting
+   * rows would tell the owner the salon is twice as busy as it is.
+   */
+  const customers = new Set(rows.map((row) => row.customer?.full_name)).size;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="label text-ink-muted">
-            {seesEverything ? "The whole salon" : "Your day"}
-          </p>
-          <h1 className="mt-1 font-display text-3xl">
-            {salonDayLabelLong(day)}
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm">
-          <Link
-            href={`/staff?date=${shiftDay(day, -1)}`}
-            className="border border-line px-3 py-2 transition-colors hover:border-ink"
-          >
-            &larr; Previous
-          </Link>
-          {day !== today && (
-            <Link
-              href="/staff"
-              className="border border-line px-3 py-2 transition-colors hover:border-ink"
-            >
-              Today
-            </Link>
-          )}
-          <Link
-            href={`/staff?date=${shiftDay(day, 1)}`}
-            className="border border-line px-3 py-2 transition-colors hover:border-ink"
-          >
-            Next &rarr;
-          </Link>
-        </div>
+    <div className="p-5 lg:p-8">
+      <header>
+        <p className="label text-ink-muted">
+          {profile.full_name} · {profile.role.display_name}
+        </p>
+        <h1 className="mt-1 font-display text-3xl lg:text-4xl">
+          {salonDayLabelLong(today)}
+        </h1>
       </header>
 
-      {error ? (
-        <p className="text-ink-muted">
-          The day could not be loaded. {error.message}
-        </p>
-      ) : (
-        <DayBoard rows={rows} timezone={org.timezone} canManage={mayManage} />
-      )}
+      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+        {[
+          { label: "Customers today", value: customers },
+          { label: "In a chair now", value: inChair.length },
+          { label: "Still to come", value: next.length },
+        ].map((stat) => (
+          <div key={stat.label} className="border border-line p-5">
+            <p className="label text-ink-muted">{stat.label}</p>
+            <p className="mt-2 font-display text-4xl tabular-nums">
+              {stat.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-3">
+        <Link
+          href="/staff/day"
+          className="bg-brand px-6 py-3 text-sm font-medium text-ink-inverse transition-colors hover:bg-brand-strong"
+        >
+          Open the day
+        </Link>
+        <span
+          aria-disabled
+          className="cursor-not-allowed border border-line px-6 py-3 text-sm text-ink-muted"
+          title="Not built yet"
+        >
+          Take a booking · soon
+        </span>
+      </div>
+
+      <section className="mt-10">
+        <h2 className="label border-b border-line pb-2 text-ink">
+          {inChair.length > 0 ? "In a chair now" : "Nobody in a chair"}
+        </h2>
+
+        {inChair.length > 0 && (
+          <ul className="divide-y divide-line">
+            {inChair.map((row) => (
+              <li key={row.id} className="flex flex-wrap gap-x-4 py-3">
+                <span className="w-28 shrink-0 tabular-nums text-ink-muted">
+                  until {salonTime(row.ends_at, org.timezone)}
+                </span>
+                <span className="font-medium">{row.customer?.full_name}</span>
+                <span className="text-ink-muted">
+                  {row.service?.name} · {row.employee?.full_name}
+                  {row.phase === "finish" && " · finishing"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-8">
+        <h2 className="label border-b border-line pb-2 text-ink">Next up</h2>
+
+        {next.length === 0 ? (
+          <p className="py-6 text-ink-muted">Nothing else booked today.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {next.slice(0, 6).map((row) => (
+              <li key={row.id} className="flex flex-wrap gap-x-4 py-3">
+                <span className="w-28 shrink-0 font-medium tabular-nums">
+                  {salonTime(row.starts_at, org.timezone)}
+                </span>
+                <span>{row.customer?.full_name}</span>
+                <span className="text-ink-muted">
+                  {row.service?.name} · {row.employee?.full_name}
+                  {row.phase === "finish" && " · finishing"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
