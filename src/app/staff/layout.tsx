@@ -54,6 +54,7 @@ export async function generateMetadata(): Promise<Metadata> {
 const NAV: { label: string; href: string; permission: string | null }[] = [
   { label: "Today", href: "/staff", permission: null },
   { label: "New booking", href: "/staff/book", permission: "appointment.create" },
+  { label: "Who does what", href: "/staff/who-does-what", permission: null },
 ];
 
 export default async function StaffLayout({
