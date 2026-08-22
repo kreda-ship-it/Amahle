@@ -737,6 +737,44 @@ Nothing here gets built until the salon has used v1 for real, for weeks.
       my day on my phone", which the staff calendar is already being built to do.
       Ask the team again once they have used it. Whichever way it goes, it is new
       scope and gets a DECISIONS entry
+- [ ] **Power BI, or any reporting tool.** Planned in detail and deferred
+      2026-08-22. It is the analytics line PROJECT.md rules out of v1, and the
+      practical objection is stronger than the scope one: there is no real data
+      yet. Every price and duration in the tree is a guess, the bookings on the
+      calendar are demo rows, and nothing moved off `pending` until the day
+      before this was written. A dashboard now would visualise invented numbers
+      and, worse, be tuned to fit them.
+
+      **What the plan concluded, so it need not be rediscovered.** The BI tool
+      is the cheap half; the work is a `reporting` schema of views and a
+      read-only role. Power BI connects with a Postgres role and password, not
+      a Supabase JWT — so `current_org_id()` returns null and every policy
+      denies, while connecting as `postgres` bypasses RLS entirely and reads
+      every salon's allergies and safety flags. There is no connection string
+      that is simply correct; the reporting surface has to exist and not depend
+      on RLS.
+
+      Those views also have to encode the traps: one braid is two or three rows
+      sharing a `visit_id` so rows overcount, `price` sits only on the `lead`
+      row, wash-and-blow-dry is free beside other work, and cancelled rows
+      leave revenue but stay in the no-show rate. Grain is one row per VISIT.
+      No customer PII in any of it — a surrogate key is enough for repeat rate,
+      and Power BI exports to Excel by default.
+
+      Connect through the Supavisor pooler in session mode (port 5432, not
+      6543 — transaction mode has no prepared statements), because direct
+      connections are IPv6-only unless the IPv4 add-on is bought. Import, not
+      DirectQuery. Scheduled refresh in the Power BI Service needs an
+      on-premises data gateway, which means an always-on machine — the largest
+      hidden cost in the idea.
+
+      **Recommendation when it is revisited:** put the half-dozen numbers the
+      salon looks at daily into the staff area, and if genuine ad-hoc
+      exploration is still wanted, Metabase fits one salon better than Power BI
+      — no per-user licence, no gateway, and it reads the same views, so the
+      schema work carries over either way. The first number worth having is
+      `appointments.source`: PROJECT.md calls online-versus-staff the real
+      measure of whether this project worked
 - [ ] **A cancellation message to the customer.** Raised 2026-08-22 as a future
       hook on appointment soft-delete, explicitly not for now. Same obstacles as
       DECISIONS #29 — 10DLC registration for text, and email being optional on
