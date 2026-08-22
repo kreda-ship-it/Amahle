@@ -169,13 +169,46 @@ export function BookingForm({
               rows={3}
               className="mt-1.5 w-full border border-line bg-surface px-4 py-3 outline-none focus:border-brand"
             />
+
+            {/*
+              Named, not left open. "Anything we should know?" gets parking
+              questions; naming allergies and scalp conditions gets the
+              answer the stylist needs before she starts, and the policies
+              page promises this box is where that is said.
+            */}
+            <p className="mt-1 text-sm text-ink-muted text-pretty">
+              Allergies, sensitivities, or anything about your scalp we should
+              know before we start.
+            </p>
           </div>
         </div>
+
+        {/*
+          Above the button, not under it. A line saying what pressing the
+          button commits you to has to be readable before it is pressed, and
+          a phone screen cuts off at the button.
+
+          A sentence rather than a tick box: no money changes hands here and
+          no deposit is held, so a box that proves nothing afterwards buys
+          only friction at the exact moment somebody has decided to book.
+        */}
+        <p className="mt-8 text-sm text-ink-muted text-pretty">
+          By confirming, you agree to our{" "}
+          <a
+            href="/policies"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-ink underline underline-offset-4 transition-colors hover:text-brand"
+          >
+            booking policies
+          </a>
+          .
+        </p>
 
         <button
           type="submit"
           disabled={pending}
-          className="btn mt-8 w-full bg-brand text-ink-inverse hover:bg-brand-strong disabled:opacity-60 sm:w-auto"
+          className="btn mt-4 w-full bg-brand text-ink-inverse hover:bg-brand-strong disabled:opacity-60 sm:w-auto"
         >
           {pending ? "Booking…" : party > 1 ? "Book all appointments" : "Confirm booking"}
         </button>

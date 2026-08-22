@@ -267,19 +267,34 @@ export default async function Home() {
 
         {/*
           The three or four small facts a salon otherwise repeats down the
-          phone all day — parking, cash, whether you can walk in. Nothing
-          renders until the salon fills `highlights` in, so this is invisible
-          rather than empty.
+          phone all day — parking, cash, whether you can walk in — with the
+          policies on the end of the same row.
+
+          The facts come from `highlights` and may be absent; the policies
+          link is always there, because the page it points at is written in
+          code and every salon on this deployment has one. So the row renders
+          either way, and a salon that has filled nothing in gets the link
+          alone rather than a rule across an empty page.
+
+          The link is the only gold thing in the row, which is what tells you
+          it is the only thing to click. Everything beside it is a statement.
         */}
-        {org.content.highlights.length > 0 && (
-          <ul className="mx-auto mt-12 flex max-w-3xl flex-wrap justify-center gap-x-10 gap-y-3 border-t border-brand/20 pt-8">
-            {org.content.highlights.map((highlight) => (
-              <li key={highlight} className="label text-ink-muted">
-                {highlight}
-              </li>
-            ))}
-          </ul>
-        )}
+        <ul className="mx-auto mt-12 flex max-w-3xl flex-wrap items-center justify-center gap-x-10 gap-y-3 border-t border-brand/20 pt-8">
+          {org.content.highlights.map((highlight) => (
+            <li key={highlight} className="label text-ink-muted">
+              {highlight}
+            </li>
+          ))}
+
+          <li>
+            <Link
+              href="/policies"
+              className="label text-brand transition-colors hover:text-brand-strong"
+            >
+              Our policies &rarr;
+            </Link>
+          </li>
+        </ul>
       </section>
 
       {/*

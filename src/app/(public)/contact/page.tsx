@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { formatTime } from "@/lib/site/hours";
 import { getOrganization } from "@/lib/site/organization";
@@ -169,6 +170,30 @@ export default async function ContactPage() {
         </p>
       )}
 
+      {/*
+        A second way to the policies, on the page people already open with
+        practical questions. The footer has the same link on every page; this
+        one is here because "am I allowed to turn up with unwashed hair" is
+        the same kind of question as "are you open on Sunday", and this is
+        where somebody comes to ask it.
+      */}
+      <section className="shell pb-14">
+        <h2 className="label border-b border-brand/30 pb-3 text-ink">
+          Good to know
+        </h2>
+
+        <p className="mt-4 max-w-2xl leading-relaxed text-ink-muted text-pretty">
+          How to prepare your hair, what happens if you are running late, how
+          to pay, and what we do with your details are all on our{" "}
+          <Link
+            href="/policies"
+            className="text-ink underline decoration-brand/40 underline-offset-4 transition-colors hover:decoration-brand"
+          >
+            policies page
+          </Link>
+          .
+        </p>
+      </section>
 
       <BookingCta phone={org.phone} />
     </>
