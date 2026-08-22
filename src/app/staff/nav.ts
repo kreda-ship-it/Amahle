@@ -27,7 +27,8 @@ export type NavItem = {
 const ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/staff",           built: true,  permission: null },
   { label: "The day",   href: "/staff/day",       built: true,  permission: null },
-  { label: "Take a booking", href: "/staff/book", built: false, permission: "appointment.create" },
+  { label: "Take a booking", href: "/staff/book", built: true,  permission: "appointment.create" },
+  { label: "Who does what", href: "/staff/who-does-what", built: true, permission: null },
   { label: "Customers", href: "/staff/customers", built: false, permission: "customer.view" },
   { label: "Team",      href: "/staff/team",      built: false, permission: "employee.record.manage" },
   { label: "Services",  href: "/staff/services",  built: false, permission: "service.manage" },

@@ -176,3 +176,25 @@ export function salonInstant(
 
   return new Date(settled).toISOString();
 }
+
+/**
+ * How far into the salon's day an instant falls, in minutes from midnight.
+ *
+ * What a calendar grid needs: 10:45 in the salon is 645, which at forty pixels
+ * an hour is 430 pixels down the column. Local to the salon, not to the
+ * browser — a receptionist checking the day from home on a laptop still set to
+ * another timezone must see the same grid as the desk.
+ */
+export function salonMinutes(when: Date | string, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(typeof when === "string" ? new Date(when) : when);
+
+  const value = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+
+  return value("hour") * 60 + value("minute");
+}

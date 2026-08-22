@@ -100,7 +100,7 @@ export async function applyStatuses(
   // The day view is force-dynamic, but the router still holds a client-side
   // cache of it; without this, going back to a day just marked shows it
   // unmarked.
-  revalidatePath("/staff");
+  revalidatePath("/staff/day");
 
   return { ok: true, changed };
 }
@@ -135,7 +135,7 @@ export async function softDeleteAppointment(
     return { ok: false, message: "That row could not be removed." };
   }
 
-  revalidatePath("/staff");
+  revalidatePath("/staff/day");
 
   return { ok: true, changed: 1 };
 }
