@@ -94,6 +94,15 @@ See DECISIONS.md #17.
 `slug` is deliberately not updatable through the API. Changing it breaks every
 URL pointing at that organization.
 
+### max_overhang_minutes
+
+How far past the end of a working window an appointment may run. Default 120.
+
+The safety net under `services.latest_start_time`: staying a bit late is normal,
+staying until dawn is a mistake nobody caught. Note that for long services this
+cap, rather than the service's own cutoff, is usually what decides the last
+bookable time.
+
 ## profiles
 
 A person who can log in. Linked to a Supabase auth user. Customers do **not**
@@ -259,6 +268,48 @@ What the salon offers. The first table anonymous visitors read.
 | `image_path` | text | |
 | `display_order` | int | |
 | `is_active` | boolean | |
+| `category_id` | uuid, nullable | The branch of the tree this hangs from. Replaces `category` text, which the public pages still read — both exist until they move over. |
+| `is_included_with_others` | boolean | Free when booked alongside another chargeable service, full price alone. **The duration always counts.** See below. |
+| `lead_minutes` | int, nullable | How long the LEAD stylist is needed. Null means one person does the whole appointment. Less than `duration_minutes` means an assistant finishes it. |
+| `latest_start_time` | time, nullable | The latest clock time this service may START. Null keeps the old rule — it must finish inside working hours. |
+
+### The included-with-others rule
+
+Kedus does not charge for a wash and blow-dry alongside other work, and does
+charge for one on its own. `is_included_with_others` says so, and
+`visit_lines()` applies it: the price becomes zero when the visit holds at
+least one other chargeable service.
+
+**Its minutes are never touched.** Free is not instant — the wash still occupies
+forty-five minutes of somebody's day. A rule that zeroed the time along with the
+money would overbook every braiding appointment by exactly that much.
+
+### Lead and finish
+
+A stylist is not in the chair for the whole of a long braid. At Kedus they found
+the style across the scalp — about two and a half hours, three for micro braids,
+one for simple cornrows — then move to the next customer while an assistant
+works the length down.
+
+`lead_minutes` records that. A service with one produces TWO kinds of
+appointment row rather than one: a `lead` row for the stylist carrying the
+price, and one or more `finish` rows carrying zero.
+
+Modelling it the old way made braiders look about sixty per cent less productive
+than they are. On one Monday, knotless braids went from 3 bookable start times
+to 9 for a single stylist.
+
+### The last booking is not the closing time
+
+`latest_start_time` is per service because the answer is per service. A trim at
+18:45 finishes a little after close and that is a normal day; the same time for
+braids would have somebody here at three in the morning.
+
+The cutoff governs **only the customer's arrival**. When an assistant picks a
+head up at 17:00 to finish it, that segment is not a booking and is not tested
+against it. `organizations.max_overhang_minutes` (default 120) is the safety net
+under all of it.
+
 
 **What anonymous visitors can read:** `id`, `org_id`, `name`, `description`,
 `category`, `price`, `price_display`, `duration_minutes`, `is_bookable_online`,
@@ -277,9 +328,102 @@ column. Not built.
 
 Managed by anyone holding `service.manage` — Owner and Manager by default.
 
+## The service tree — categories, questions and answers
+
+Migration 027. A service used to be one row with one price and one duration.
+That is true of a blow dry and false of everything the salon earns on: knotless
+braids are a style, a size, a length, a boho finish or not, whose hair, and what
+state it arrives in — and each answer changes the price AND the time.
+
+Four tables hold the menu, one holds what a customer chose.
+
+### service_categories
+
+| Column | Type | Meaning |
+|---|---|---|
+| `parent_id` | uuid, nullable | Self-referencing. Null is a top-level heading. |
+| `name` | text | Unique per parent, among live rows |
+| `display_order` | int | |
+| `is_active` | boolean | |
+
+The ten headings of the salon's mind map, and sub-branches where it has them —
+Braiding splits into "With extensions" and "Without". A heading may hold
+services directly AND have branches beneath it; Natural hair styling does both.
+
+### service_option_groups — one question
+
+| Column | Type | Meaning |
+|---|---|---|
+| `name` | text | What staff call it — "Size" |
+| `prompt` | text | What the customer reads — "What size would you like?" |
+| `selection` | text | `one` or `many` |
+| `is_required` | boolean | False lets somebody walk past it |
+
+Defined once, attached to many styles. "Size" is the same question for knotless
+braids, box braids and twists; typing it three times is how three versions of it
+end up in the database saying slightly different things.
+
+### service_options — one answer, and what it costs
+
+| Column | Type | Meaning |
+|---|---|---|
+| `group_id` | uuid | The question it answers |
+| `price_delta` | numeric(10,2) | **May be negative** |
+| `duration_delta_minutes` | int | **May be negative** |
+| `lead_delta_minutes` | int | How it changes the LEAD stylist's time specifically |
+
+Negative deltas are deliberate. "Shoulder length, minus an hour" is how a salon
+describes it, and forbidding it would force every base price to be the cheapest
+possible combination — a lie on a price list. The TOTAL is what must stay
+positive, and that is enforced where the total is computed.
+
+**Length adds to the finish; size adds to both.** Mid-back to waist adds an hour
+to the appointment and nothing to the founding — the stylist lays the same
+braids across the same scalp. Size changes how many braids there are. This is
+why a longer booking becomes more of the plentiful person rather than more of
+the scarce one.
+
+### service_option_group_links — which questions each style asks
+
+| Column | Type | Meaning |
+|---|---|---|
+| `service_id` | uuid | |
+| `group_id` | uuid | |
+| `depends_on_option_id` | uuid, nullable | Ask this question only if that answer was given |
+| `display_order` | int | The order asked |
+
+`depends_on_option_id` is the conditional edge of the decision tree: "which
+colour?" appears only after "the salon provides the hair". A service that asks
+nothing has no rows here — absence, not a flag.
+
+One level of dependency only. A question depending on a question depending on a
+question is a flow chart nobody can hold in their head.
+
+### appointment_options — what this customer chose
+
+| Column | Type | Meaning |
+|---|---|---|
+| `appointment_id` | uuid | The `lead` row, which carries the price |
+| `option_id` | uuid, **nullable** | |
+| `group_name`, `option_name` | text | Snapshots |
+| `price_delta`, `duration_delta_minutes` | | Snapshots |
+
+Snapshotted, for the same reason `appointments.price` is: the salon will put its
+prices up, and a booking from March must still add up in June. `option_id` is
+nullable so retiring an option cannot take the record of a past booking with it.
+
+No anon access at all — this is one identified person's booking. Written by
+`create_appointment()`, which is `security definer` and needs no grant.
+
 ## employee_services
 
-Which employees can perform which services. Unique per pair among live rows.
+Which employees can perform which services, and in which capacity. Unique per
+(employee, service, **role**) among live rows.
+
+`role` is `lead` or `assist`. "Fikir can braid" and "Emu can finish a braid" are
+different claims and this table could not tell them apart before migration 033.
+`lead` means perform it from the start; `assist` means finish one somebody else
+has begun.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -424,6 +568,17 @@ The core table. Written only through `createAppointment()`.
 | `price` | numeric | Snapshot at booking time; service price may change later |
 | `notes` | text | |
 | `created_by` | uuid, nullable | Null when booked online by a customer |
+| `employee_requested` | boolean | True when the customer asked for this person **by name**. False when the system assigned them. |
+| `phase` | text | `lead` or `finish`. The price sits on the `lead` row; `finish` rows carry zero. |
+
+`employee_requested` exists because the two are indistinguishable once written.
+A customer who picks "Anyone" and is given Hanna produces a row saying Hanna,
+exactly like one who asked for her — and the receptionist may move the first
+without asking but not the second. Recorded at booking time or lost forever.
+See DECISIONS #32.
+
+`phase` is why one braid is two or three rows across two or three people. A day
+view that shows them flat makes one customer look like three bookings.
 
 **Statuses:** `pending`, `confirmed`, `checked_in`, `in_progress`, `completed`,
 `cancelled`, `no_show`, `late_arrival`
@@ -516,12 +671,9 @@ and only stylists who perform *every* one are offered — a visit split across t
 specialists is a phone call, because finding a chain of stylists whose free time
 joins up is a different and much worse problem than finding one gap.
 
-> **Superseded by DECISIONS #32, and still true of the code today.** The salon
-> employs washers who are not stylists, so braiding plus a wash — its most
-> ordinary booking — is exactly the case this refuses. A visit will be allowed
-> to span two employees, anchored on the scarce service. Nothing above has
-> changed yet; this paragraph describes what `get_available_slots()` does right
-> now and stops being accurate when that work lands. The employee is in the result
+> **Superseded by DECISIONS #32. Still true of `get_available_slots()`, which
+> is now a primitive rather than the entry point.** Use `get_visit_slots()` for
+> anything that is a visit — see below. The employee is in the result
 because `employee` may be null, meaning "anyone who performs this".
 
 **Nothing is precomputed.** No slot table, no nightly job, no cache. Availability
@@ -585,6 +737,66 @@ difference between a customer and the person who runs the diary.
 
 Two optional settings in `public_settings`: `booking_lead_time_hours` (default 2,
 so nobody books ten minutes from now) and `booking_horizon_days` (default 60).
+
+
+## Working out a visit — the functions
+
+Everything below is computed in the database, never in the website. The running
+total a customer watches and the number written to their appointment have to
+come from the same arithmetic or they drift, and a duration computed in a
+browser can be edited by anyone with dev tools.
+
+A **selection** is the shape all of these take:
+
+```json
+[{ "service_id": "…", "option_ids": ["…", "…"] }, …]
+```
+
+One entry per service in the order performed. jsonb rather than parallel arrays
+because an option belongs TO a service — "size: medium" means nothing alone, and
+a flat list would be ambiguous the moment a visit holds two braiding styles.
+
+| Function | Answers |
+|---|---|
+| `visit_lines(org, selection)` | One row per service: price, duration, lead minutes, whether the included rule fired |
+| `visit_totals(org, selection)` | The two numbers the booking page shows |
+| `visit_minutes(org, service_ids, selection)` | How long to look for a gap of |
+| `visit_plan(org, service_ids, selection)` | The visit as the scheduler sees it, plus how many people can perform each service — "scarce" is the smallest of that |
+| `employee_is_free(org, employee, starts_at, minutes, token, party, latest_start, allow_overhang)` | Rota, time off, existing appointments and other people's holds. **No grant** — it would let the public map the rota one yes/no at a time |
+| `schedule_permits(org, employee, starts_at, minutes, latest_start, allow_overhang)` | Just the rota half. **The caller states the rule** rather than the function looking it up, because only the caller knows whether it is a customer arriving or a colleague taking over |
+| `get_visit_slots(org, service_ids, from, to, employee, token, party, selection, limit)` | When a whole visit can start, and every row that would be written |
+
+### get_visit_slots, and what it costs
+
+Returns `(slot_starts_at, slot_employee_id, slot_assignment)` where the
+assignment is an ARRAY of every row that would be written — service, employee,
+phase, start, minutes — because a visit legitimately involves a stylist and
+several assistants.
+
+For each service it checks a **lead** (a stylist who performs it, free for the
+lead minutes) and then a **finish** (assistants covering the rest, greedily, in
+a chain if one person cannot see it through).
+
+The chain is cheap only because the assistants are interchangeable — any of them
+can finish any style. That turns what would be a search for people whose free
+time joins up into a greedy cover with no backtracking. If they ever specialise,
+this becomes the combinatorial problem DECISIONS #32 was written to avoid.
+
+**It walks days × steps × phases and is not a set-based query.** Ask it for the
+window being shown — a day, or a few — not a month.
+
+### create_appointment, and what the caller may decide
+
+The caller supplies **who leads**, and nothing else. The times, the phases, the
+split between founding and finishing, the choice of finishers and the price are
+all recomputed on write.
+
+That is a security boundary, not tidiness: a form posting times and phases back
+from what availability offered could otherwise hand a stylist five minutes of a
+six-hour braid, or move the money onto a row nobody charges for.
+
+Finishers are chosen at write time rather than taken from the offer, because
+minutes pass between somebody seeing a time and pressing the button.
 
 ## appointment_holds
 

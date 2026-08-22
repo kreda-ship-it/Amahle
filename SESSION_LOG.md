@@ -18,6 +18,95 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-22 — The booking engine, and the day the staff look at
+
+**Built:** Migrations 027 to 038, all applied to dev, plus the staff day view.
+The system now models how Kedus actually works rather than how a booking system
+usually assumes a salon works. Four things it did not know this morning:
+
+**A service is not one price and one duration.** 027 gave the menu a tree of
+categories, questions and answers, each answer carrying a price delta and a
+minutes delta. 029 computes the totals in the database — never in the website,
+because the running total a customer watches and the number written to their
+appointment must come from the same arithmetic. A medium-big waist-length boho
+knotless braid with salon hair prices at $325 and 8h15 rather than $220 and 6h.
+
+**Wash and blow-dry is free beside other work and charged alone.** One flag,
+applied where the price is computed. Its forty-five minutes always count — free
+is not instant, and zeroing the time with the money would overbook every
+braiding appointment by exactly a wash.
+
+**A visit can need two people.** DECISIONS #32. The salon's washers and
+assistants are not stylists, and only they do take-outs — so "take my braids out
+and put new ones in" could not be scheduled at all. Availability now anchors on
+the scarce service and fits the rest around it. Proved on real data: nobody
+performs both take-down and knotless braids, the old function returned zero
+times forever, the new one returns 78.
+
+**A braider is not in the chair for six hours.** The biggest one. They found the
+style across the scalp — 2h30, three hours for micro braids, one for simple
+cornrows — then move on while an assistant works the length down. 033 to 038
+model that as a `lead` row and `finish` rows sharing a visit. On one Monday,
+knotless braids went from 3 bookable start times to 9 for one stylist. The
+software had been modelling the salon's braiders as roughly sixty per cent less
+productive than they are.
+
+Also: the last booking taken is now separate from the closing time, per service,
+because a trim at 18:45 is a normal day and braids at 18:45 are not. And the
+real team replaced the five people I had invented — Maki, Fikir, Ethopi, Jerry,
+Mekdi, Rani, Sofi, the owners Dagnu and Mimi, and eight assistants — with
+Selam's stylist matrix applied as the authority on who does what.
+
+The staff area, which was a list of permission keys, is now the day: grouped by
+person, visits marked so a founding and a finishing read as one head, and a star
+on anyone the customer asked for by name. There is no role check in that file —
+row-level security decides what comes back, so a stylist sees their column and a
+receptionist sees the salon from identical code.
+
+**Broke / unresolved:** Nothing broken. Several things deliberately unfinished.
+
+EVERY PRICE, DURATION AND LEAD TIME IN THE TREE IS A GUESS. They are shaped like
+real numbers so the engine could be built and seen working. Selam's real figures
+are update statements whenever they arrive; nothing depends on them being right.
+
+The 16:30 cutoff on knotless braids is currently unreachable — the two-hour
+overhang cap stops it at 15:00 first. Deferred deliberately.
+
+Two judgements in the stylist matrix need Selam: Braided Ponytail and Circle
+Half Cornrows Half Curls are filed as with-extensions on the common answer
+rather than a known one, and Fikir's Hair Trim cell was blank rather than Y or
+N, so Fikir is off it.
+
+Days off are one a week each, staggered, and invented. Real time off replaces
+them.
+
+Announcements were asked for and not built — they are the internal notes system
+PROJECT.md rules out of v1, and that is a scope decision to make on purpose.
+
+Demo bookings sit on the calendar so the day view has something in it. Three
+customers named "Demo — …"; the removal statement is in commit fce0537.
+
+Two bugs worth remembering, both found by testing rather than reading. The
+availability search returned the SAME times with and without the customer's
+answers, because candidates were generated from the service's base duration
+while the answers made the job longer — the failure this whole line of work
+exists to prevent, reintroduced one layer up. And adding a parameter to
+schedule_permits created a SECOND function beside the original rather than
+replacing it; four overloads where there should have been two, working only
+because Postgres prefers an exact arity match.
+
+**Next:** The dense one-screen entry form for phone bookings — PROJECT.md calls
+it the feature that decides whether this survives contact with reality, and it
+now has a day to land in. After that the customer funnel: one question per page,
+the visit strip with its + button and per-service professional dropdown, then
+the professional and date steps.
+
+Nothing customer-facing uses any of this yet. The public site still calls
+get_available_slots() and books single-employee visits, so the engine is
+complete and unreachable.
+
+---
+
 ## 2026-08-21 — Redesign the public site, and wire up the things that should be tappable
 
 **Built:** The shopfront now looks like the salon rather than like a template.
