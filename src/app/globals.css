@@ -58,6 +58,33 @@
   /* Borders and hairlines. */
   --line: #e3dbd0;
 
+  /*
+   * THE EIGHT APPOINTMENT STATUSES.
+   *
+   * Staff-area only — the public site never shows a status — but defined here
+   * with everything else, because this file is the only place a hex code
+   * appears and a colour smuggled into a component is how that stops being
+   * true.
+   *
+   * They are warm on purpose: a stock traffic-light green beside this palette
+   * looks like a browser alert dropped onto the page. Each one is dark enough
+   * to read as a solid mark against `--surface`.
+   *
+   * COLOUR IS NEVER THE ONLY SIGNAL. Around one man in twelve cannot reliably
+   * separate red from green, so every status renders its word as well as its
+   * mark, and the word is set in `--ink` rather than in the status colour.
+   * That also sidesteps the contrast problem entirely: the coloured square has
+   * to be visible, not legible.
+   */
+  --status-pending: #8a7f70;
+  --status-confirmed: #2f6b3f;
+  --status-checked-in: #2b5f86;
+  --status-in-progress: #a8763a;
+  --status-completed: #4a6b5c;
+  --status-late: #b8563c;
+  --status-cancelled: #8e2f20;
+  --status-no-show: #5a1f14;
+
   color-scheme: light;
 }
 
@@ -143,6 +170,15 @@
   --color-surface-sunk: var(--surface-sunk);
   --color-surround: var(--surround);
   --color-line: var(--line);
+
+  --color-status-pending: var(--status-pending);
+  --color-status-confirmed: var(--status-confirmed);
+  --color-status-checked-in: var(--status-checked-in);
+  --color-status-in-progress: var(--status-in-progress);
+  --color-status-completed: var(--status-completed);
+  --color-status-late: var(--status-late);
+  --color-status-cancelled: var(--status-cancelled);
+  --color-status-no-show: var(--status-no-show);
 
   --font-sans: var(--font-geist-sans);
   --font-display: var(--font-cormorant);

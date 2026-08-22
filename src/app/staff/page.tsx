@@ -2,13 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { can, requireProfile } from "@/lib/auth";
-import {
-  salonDateKey,
-  salonDayLabelLong,
-  salonTime,
-} from "@/lib/site/datetime";
+import { salonDateKey, salonDayLabelLong } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+import { DayBoard, type Row } from "./day-board";
 
 /**
  * The salon's day.
@@ -20,14 +18,18 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * WHAT MAKES THIS HARDER THAN A LIST OF APPOINTMENTS. Since migration 033 a
  * single braid is two or three rows across two or three people — the stylist
  * founds it, an assistant finishes it. Shown flat, one customer looks like
- * three bookings and the day looks twice as busy as it is. So rows are
- * grouped by visit, and the phase is on the face of each one.
+ * three bookings and the day looks twice as busy as it is. So rows are grouped
+ * by visit, and the phase is on the face of each one.
  *
  * WHO SEES WHAT IS NOT DECIDED HERE. The query asks for the day; row-level
  * security decides what comes back. `appointments_select` is
  * `appointment.view_all OR employee_id = current_employee_id()`, so a stylist
- * gets their own column and a receptionist gets the salon, from the same
- * code. There is no `if (role === …)` on this page and there must not be.
+ * gets their own column and a receptionist gets the salon, from the same code.
+ * There is no `if (role === …)` on this page and there must not be.
+ *
+ * The rendering moved into `DayBoard` when marking arrived — a highlighter and
+ * an undo strip are interactive, and this half is not. Fetching stays here so
+ * the query, and the security that governs it, remain on the server.
  */
 
 /* `robots` is not repeated here — the staff layout marks the whole area
@@ -39,22 +41,6 @@ export const metadata: Metadata = {
 /* Never cached: a day view showing a booking taken ten minutes ago is worse
    than no day view, because somebody will trust it. */
 export const dynamic = "force-dynamic";
-
-type Row = {
-  id: string;
-  visit_id: string;
-  starts_at: string;
-  ends_at: string;
-  phase: string;
-  status: string;
-  employee_requested: boolean;
-  price: number;
-  for_name: string | null;
-  notes: string | null;
-  employee: { id: string; full_name: string } | null;
-  service: { name: string } | null;
-  customer: { full_name: string; phone: string } | null;
-};
 
 /** Yesterday or tomorrow, as a date key the URL can carry. */
 function shiftDay(dateKey: string, days: number): string {
@@ -78,7 +64,11 @@ export default async function StaffDayPage({
   const org = await getOrganization();
   const supabase = await createSupabaseServerClient();
 
-  const seesEverything = await can("appointment.view_all");
+  const [seesEverything, mayManage] = await Promise.all([
+    can("appointment.view_all"),
+    can("appointment.manage"),
+  ]);
+
   const today = salonDateKey(new Date(), org.timezone);
   const day = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? "")
     ? (params.date as string)
@@ -96,59 +86,21 @@ export default async function StaffDayPage({
     .from("appointments")
     .select(
       `id, visit_id, starts_at, ends_at, phase, status, employee_requested,
-       price, for_name, notes,
+       for_name, notes,
        employee:employees (id, full_name),
        service:services (name),
        customer:customers (full_name, phone)`,
     )
     .gte("starts_at", from.toISOString())
     .lte("starts_at", to.toISOString())
+    .is("deleted_at", null)
     .order("starts_at");
 
   const rows = (data ?? []) as unknown as Row[];
-  const live = rows.filter(
-    (row) => row.status !== "cancelled" && row.status !== "no_show",
-  );
-
-  // One entry per person who has something on, in the order the salon lists
-  // them. An employee with an empty day is not shown: this is a working
-  // screen, not a roster.
-  const byEmployee = new Map<string, { name: string; rows: Row[] }>();
-
-  for (const row of live) {
-    const id = row.employee?.id ?? "unassigned";
-    const entry = byEmployee.get(id);
-
-    if (entry) entry.rows.push(row);
-    else
-      byEmployee.set(id, {
-        name: row.employee?.full_name ?? "Nobody assigned",
-        rows: [row],
-      });
-  }
-
-  /*
-   * A short mark per visit — A, B, C — so the same customer's founding and
-   * finishing can be recognised as one job across two columns. The visit id
-   * is a UUID and unreadable; what the desk needs is "these two are the same
-   * head".
-   */
-  const visitMark = new Map<string, string>();
-  for (const row of live) {
-    if (!visitMark.has(row.visit_id)) {
-      const n = visitMark.size;
-      visitMark.set(
-        row.visit_id,
-        String.fromCharCode(65 + (n % 26)) + (n >= 26 ? String(Math.floor(n / 26)) : ""),
-      );
-    }
-  }
-
-  const cancelled = rows.length - live.length;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-4">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="label text-ink-muted">
             {seesEverything ? "The whole salon" : "Your day"}
@@ -156,15 +108,6 @@ export default async function StaffDayPage({
           <h1 className="mt-1 font-display text-3xl">
             {salonDayLabelLong(day)}
           </h1>
-
-          {/* Moved up from the footer when the footer moved into the layout.
-              It belongs beside the date anyway — it is a fact about this day,
-              not about the person reading it. */}
-          {cancelled > 0 && (
-            <p className="mt-1 text-sm text-ink-muted">
-              {cancelled} cancelled {cancelled === 1 ? "row" : "rows"} hidden
-            </p>
-          )}
         </div>
 
         <div className="flex items-center gap-2 text-sm">
@@ -195,91 +138,8 @@ export default async function StaffDayPage({
         <p className="text-ink-muted">
           The day could not be loaded. {error.message}
         </p>
-      ) : live.length === 0 ? (
-        <p className="py-12 text-center text-ink-muted">
-          Nothing booked{day === today ? " today" : " that day"}.
-        </p>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[...byEmployee.values()].map((person) => (
-            <section key={person.name} className="border border-line">
-              <h2 className="border-b border-line bg-surface-sunk px-4 py-2.5 font-medium">
-                {person.name}
-                <span className="ml-2 text-sm font-normal text-ink-muted">
-                  {person.rows.length}
-                </span>
-              </h2>
-
-              <ul className="divide-y divide-line">
-                {person.rows.map((row) => (
-                  <li key={row.id} className="px-4 py-3">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="font-medium tabular-nums">
-                        {salonTime(row.starts_at, org.timezone)}
-                        <span className="text-ink-muted">
-                          {" – "}
-                          {salonTime(row.ends_at, org.timezone)}
-                        </span>
-                      </span>
-
-                      {/*
-                        The visit mark, so a founding in one column and a
-                        finishing in another are visibly the same customer.
-                      */}
-                      <span className="label text-ink-muted">
-                        {visitMark.get(row.visit_id)}
-                      </span>
-                    </div>
-
-                    <p className="mt-1">
-                      {row.customer?.full_name ?? "—"}
-                      {row.for_name && (
-                        <span className="text-ink-muted"> · {row.for_name}</span>
-                      )}
-                    </p>
-
-                    <p className="mt-0.5 text-sm text-ink-muted">
-                      {row.service?.name}
-                      {row.phase === "finish" && (
-                        <span className="ml-2 border border-line px-1.5 py-0.5 text-xs">
-                          finishing
-                        </span>
-                      )}
-                      {/*
-                        A star means the customer asked for this person by
-                        name. The receptionist may move an assignment; a
-                        request she should ask about first. See DECISIONS #32.
-                      */}
-                      {row.employee_requested && (
-                        <span
-                          className="ml-2 text-brand"
-                          title="Asked for by name"
-                        >
-                          ★
-                        </span>
-                      )}
-                    </p>
-
-                    {row.customer?.phone && (
-                      <a
-                        href={`tel:${row.customer.phone.replace(/[^\d+]/g, "")}`}
-                        className="mt-1 inline-block text-sm text-ink-muted underline underline-offset-4"
-                      >
-                        {row.customer.phone}
-                      </a>
-                    )}
-
-                    {row.notes && (
-                      <p className="mt-2 border-l-2 border-line pl-3 text-sm text-ink-muted">
-                        {row.notes}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <DayBoard rows={rows} timezone={org.timezone} canManage={mayManage} />
       )}
     </div>
   );
