@@ -18,8 +18,9 @@ export const metadata: Metadata = {
  * created by an owner, not self-served.
  */
 export default async function LoginPage() {
-  // Already signed in? Nothing to do here.
-  if (await getProfile()) redirect("/");
+  // Already signed in? Nothing to do here — on to the staff area, the same
+  // place a fresh sign-in lands.
+  if (await getProfile()) redirect("/staff");
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">

@@ -43,12 +43,16 @@ export async function signIn(
     return { error: "Those details didn't work. Check them and try again." };
   }
 
+  // Straight to the staff area, not the homepage. Somebody signing in has
+  // already said where they are going — landing them on the shopfront makes
+  // them find the footer link and click it a second time.
+  //
   // Outside the try/catch of a return value: redirect() works by throwing,
   // so it must be the last thing that happens.
-  redirect("/");
+  redirect("/staff");
 }
 
-/** Signs out and returns to the homepage. */
+/** Signs out and returns to the homepage — the right place once you are out. */
 export async function signOut(): Promise<void> {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
