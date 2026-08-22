@@ -165,6 +165,7 @@ export type Database = {
           id: string
           notes: string | null
           org_id: string
+          phase: string
           price: number
           service_id: string
           source: string
@@ -186,6 +187,7 @@ export type Database = {
           id?: string
           notes?: string | null
           org_id: string
+          phase?: string
           price: number
           service_id: string
           source: string
@@ -207,6 +209,7 @@ export type Database = {
           id?: string
           notes?: string | null
           org_id?: string
+          phase?: string
           price?: number
           service_id?: string
           source?: string
@@ -499,6 +502,7 @@ export type Database = {
           employee_id: string
           id: string
           org_id: string
+          role: string
           service_id: string
           updated_at: string
         }
@@ -508,6 +512,7 @@ export type Database = {
           employee_id: string
           id?: string
           org_id: string
+          role?: string
           service_id: string
           updated_at?: string
         }
@@ -517,6 +522,7 @@ export type Database = {
           employee_id?: string
           id?: string
           org_id?: string
+          role?: string
           service_id?: string
           updated_at?: string
         }
@@ -767,6 +773,7 @@ export type Database = {
           deleted_at: string | null
           email: string | null
           id: string
+          max_overhang_minutes: number
           name: string
           phone: string | null
           private_settings: Json
@@ -782,6 +789,7 @@ export type Database = {
           deleted_at?: string | null
           email?: string | null
           id?: string
+          max_overhang_minutes?: number
           name: string
           phone?: string | null
           private_settings?: Json
@@ -797,6 +805,7 @@ export type Database = {
           deleted_at?: string | null
           email?: string | null
           id?: string
+          max_overhang_minutes?: number
           name?: string
           phone?: string | null
           private_settings?: Json
@@ -1157,6 +1166,7 @@ export type Database = {
           group_id: string
           id: string
           is_active: boolean
+          lead_delta_minutes: number
           name: string
           org_id: string
           price_delta: number
@@ -1171,6 +1181,7 @@ export type Database = {
           group_id: string
           id?: string
           is_active?: boolean
+          lead_delta_minutes?: number
           name: string
           org_id: string
           price_delta?: number
@@ -1185,6 +1196,7 @@ export type Database = {
           group_id?: string
           id?: string
           is_active?: boolean
+          lead_delta_minutes?: number
           name?: string
           org_id?: string
           price_delta?: number
@@ -1222,6 +1234,8 @@ export type Database = {
           is_active: boolean
           is_bookable_online: boolean
           is_included_with_others: boolean
+          latest_start_time: string | null
+          lead_minutes: number | null
           name: string
           org_id: string
           price: number
@@ -1242,6 +1256,8 @@ export type Database = {
           is_active?: boolean
           is_bookable_online?: boolean
           is_included_with_others?: boolean
+          latest_start_time?: string | null
+          lead_minutes?: number | null
           name: string
           org_id: string
           price?: number
@@ -1262,6 +1278,8 @@ export type Database = {
           is_active?: boolean
           is_bookable_online?: boolean
           is_included_with_others?: boolean
+          latest_start_time?: string | null
+          lead_minutes?: number | null
           name?: string
           org_id?: string
           price?: number
@@ -1302,6 +1320,7 @@ export type Database = {
           p_notes?: string
           p_org_id: string
           p_party_index?: number
+          p_selection?: Json
           p_service_ids: string[]
           p_session_token?: string
           p_starts_at: string
@@ -1335,6 +1354,19 @@ export type Database = {
       current_employee_id: { Args: never; Returns: string }
       current_org_id: { Args: never; Returns: string }
       current_profile_id: { Args: never; Returns: string }
+      employee_is_free: {
+        Args: {
+          p_allow_overhang?: boolean
+          p_employee_id: string
+          p_latest_start?: string
+          p_minutes: number
+          p_org_id: string
+          p_party_index?: number
+          p_session_token?: string
+          p_starts_at: string
+        }
+        Returns: boolean
+      }
       find_or_create_customer: {
         Args: {
           p_email?: string
@@ -1381,6 +1413,24 @@ export type Database = {
           starts_at: string
         }[]
       }
+      get_visit_slots: {
+        Args: {
+          p_employee_id?: string
+          p_from_date: string
+          p_limit?: number
+          p_org_id: string
+          p_party_index?: number
+          p_selection?: Json
+          p_service_ids: string[]
+          p_session_token?: string
+          p_to_date?: string
+        }
+        Returns: {
+          slot_assignment: Json
+          slot_employee_id: string
+          slot_starts_at: string
+        }[]
+      }
       has_permission: { Args: { p_key: string }; Returns: boolean }
       hold_slot: {
         Args: {
@@ -1407,12 +1457,45 @@ export type Database = {
       }
       schedule_permits: {
         Args: {
+          p_allow_overhang?: boolean
           p_employee_id: string
+          p_latest_start?: string
           p_minutes: number
           p_org_id: string
           p_starts_at: string
         }
         Returns: boolean
+      }
+      visit_lines: {
+        Args: { p_org_id: string; p_selection: Json }
+        Returns: {
+          duration_minutes: number
+          lead_minutes: number
+          ord: number
+          price: number
+          service_id: string
+          was_included: boolean
+        }[]
+      }
+      visit_minutes: {
+        Args: { p_org_id: string; p_selection?: Json; p_service_ids: string[] }
+        Returns: number
+      }
+      visit_plan: {
+        Args: { p_org_id: string; p_selection?: Json; p_service_ids: string[] }
+        Returns: {
+          minutes: number
+          ord: number
+          qualified: number
+          service_id: string
+        }[]
+      }
+      visit_totals: {
+        Args: { p_org_id: string; p_selection: Json }
+        Returns: {
+          total_minutes: number
+          total_price: number
+        }[]
       }
     }
     Enums: {

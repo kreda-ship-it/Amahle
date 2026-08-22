@@ -57,6 +57,18 @@ export type CreateAppointmentInput = {
    */
   employeeRequested?: boolean;
 
+  /**
+   * The answers chosen, per service — size, length, whose hair, and so on.
+   *
+   *   [{ serviceId, optionIds: [...] }, ...]
+   *
+   * Sent so the database can work out the price and the length itself. It is
+   * deliberately NOT sent as a price or a duration: those are computed in
+   * `visit_lines()` and recomputed on write, so a crafted request can change
+   * what somebody asked for but never what it costs or how long it blocks.
+   */
+  selection?: { serviceId: string; optionIds: string[] }[];
+
   /** When the customer sits down. The end time is computed from the service. */
   startsAt: Date | string;
 
@@ -151,6 +163,12 @@ export async function createAppointment(
     p_visit_id: input.visitId ?? undefined,
     p_for_name: input.forName ?? undefined,
     p_employee_requested: input.employeeRequested ?? undefined,
+    p_selection: input.selection
+      ? input.selection.map((entry) => ({
+          service_id: entry.serviceId,
+          option_ids: entry.optionIds,
+        }))
+      : undefined,
   });
 
   if (error) {
