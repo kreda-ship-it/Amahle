@@ -67,8 +67,13 @@ export async function createPlan(
  */
 export async function setPlannedMove(input: {
   planId: string;
-  visitId: string;
+  /** One appointment. Moving a whole visit sends one of these per row. */
+  appointmentId: string;
   targetStartsAt: string;
+  /** Null leaves the person alone; set by dragging into another column. */
+  targetEmployeeId?: string | null;
+  /** Null leaves the length alone; set by pulling the bottom edge. */
+  targetMinutes?: number | null;
   orgId: string;
 }): Promise<PlanResult> {
   await requirePermission("appointment.manage");
@@ -79,10 +84,12 @@ export async function setPlannedMove(input: {
     {
       org_id: input.orgId,
       plan_id: input.planId,
-      visit_id: input.visitId,
+      appointment_id: input.appointmentId,
       target_starts_at: input.targetStartsAt,
+      target_employee_id: input.targetEmployeeId ?? null,
+      target_minutes: input.targetMinutes ?? null,
     },
-    { onConflict: "plan_id,visit_id" },
+    { onConflict: "plan_id,appointment_id" },
   );
 
   if (error) {
@@ -98,7 +105,7 @@ export async function setPlannedMove(input: {
 /** Take one move back out of the plan. Soft, like everything else here. */
 export async function dropPlannedMove(
   planId: string,
-  visitId: string,
+  appointmentId: string,
 ): Promise<PlanResult> {
   await requirePermission("appointment.manage");
 
@@ -108,7 +115,7 @@ export async function dropPlannedMove(
     .from("schedule_plan_moves")
     .update({ deleted_at: new Date().toISOString() })
     .eq("plan_id", planId)
-    .eq("visit_id", visitId)
+    .eq("appointment_id", appointmentId)
     .is("deleted_at", null);
 
   if (error) {

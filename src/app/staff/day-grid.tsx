@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { STATUSES, statusMeta, type StatusKey } from "@/lib/appointments/status";
 import { salonMinutes, salonTime } from "@/lib/site/datetime";
@@ -13,7 +14,7 @@ import {
   type StatusChange,
 } from "./actions";
 import { DatePicker } from "./date-picker";
-import { setPlannedMove } from "./plan-actions";
+import { dropPlannedMove, setPlannedMove } from "./plan-actions";
 
 /**
  * The day, as a grid.
@@ -117,7 +118,25 @@ type Props = {
    * not a copy of the day, a booking taken while it is open simply appears;
    * there is nothing to keep in step.
    */
-  plan: { id: string; orgId: string; moves: Record<string, string> } | null;
+  plan: {
+    id: string;
+    orgId: string;
+    /*
+     * By appointment id, not visit — reassigning and resizing are facts about
+     * one appointment, and migration 044 moved the whole table to that grain
+     * rather than keeping two kinds of entry.
+     */
+    moves: Record<
+      string,
+      {
+        startsAt: string;
+        employeeId: string | null;
+        minutes: number | null;
+        refused: string | null;
+        applied: boolean;
+      }
+    >;
+  } | null;
 };
 
 /* The salon's day, wider than its opening hours so an overrun is visible
@@ -327,6 +346,7 @@ export function DayGrid({
   /* Measured rather than assumed: columns share the available width, so how
      wide one is depends on the screen and on how many stylists work here. */
   const gridRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const [brush, setBrush] = useState<StatusKey | null>(null);
   const [zoom, setZoom] = useState(2);
@@ -375,6 +395,89 @@ export function DayGrid({
 
   /** A length change sent and not yet returned, in minutes. */
   const [resized, setResized] = useState<Record<string, number>>({});
+
+  /*
+   * UNDO AND REDO, IN PLANNING MODE ONLY, and the asymmetry is the point.
+   *
+   * On the live calendar every gesture is a write to real appointments, and
+   * the honest reversal is the one already there: a strip offering to move it
+   * back, for a few seconds. A stack of twenty undos over bookings that other
+   * people are also editing would be a promise nothing can keep.
+   *
+   * A plan changes nothing until it is applied, so a full history costs
+   * nothing and is exactly what a scratch surface should have. Each step
+   * remembers the entry before and after; undoing writes the before back.
+   */
+  type PlanStep = {
+    appointmentId: string;
+    before: {
+      startsAt: string;
+      employeeId: string | null;
+      minutes: number | null;
+    } | null;
+    after: {
+      startsAt: string;
+      employeeId: string | null;
+      minutes: number | null;
+    };
+  };
+
+  const [history, setHistory] = useState<{ done: PlanStep[]; undone: PlanStep[] }>(
+    { done: [], undone: [] },
+  );
+
+  function remember(step: PlanStep) {
+    // A new action makes the redo branch unreachable, as everywhere else.
+    setHistory((current) => ({ done: [...current.done, step], undone: [] }));
+  }
+
+  function writeEntry(
+    step: PlanStep["after"] | null,
+    appointmentId: string,
+  ): Promise<unknown> {
+    if (!plan) return Promise.resolve();
+
+    if (!step) return dropPlannedMove(plan.id, appointmentId);
+
+    return setPlannedMove({
+      planId: plan.id,
+      appointmentId,
+      targetStartsAt: step.startsAt,
+      targetEmployeeId: step.employeeId,
+      targetMinutes: step.minutes,
+      orgId: plan.orgId,
+    });
+  }
+
+  function stepBack() {
+    const last = history.done[history.done.length - 1];
+    if (!last || !plan) return;
+
+    setHistory((current) => ({
+      done: current.done.slice(0, -1),
+      undone: [...current.undone, last],
+    }));
+
+    startSaving(async () => {
+      await writeEntry(last.before, last.appointmentId);
+      router.refresh();
+    });
+  }
+
+  function stepForward() {
+    const next = history.undone[history.undone.length - 1];
+    if (!next || !plan) return;
+
+    setHistory((current) => ({
+      done: [...current.done, next],
+      undone: current.undone.slice(0, -1),
+    }));
+
+    startSaving(async () => {
+      await writeEntry(next.after, next.appointmentId);
+      router.refresh();
+    });
+  }
 
   /*
    * PINCH TO ZOOM. Two fingers on the pane change how many pixels an hour is
@@ -450,20 +553,18 @@ export function DayGrid({
     if (!plan) return NOTHING_PLANNED;
 
     const out: Record<string, number> = {};
-    const startOf = new Map<string, number>();
 
     for (const row of rows) {
-      const at = new Date(row.starts_at).getTime();
-      const seen = startOf.get(row.visit_id);
-      if (seen === undefined || at < seen) startOf.set(row.visit_id, at);
-    }
+      const entry = plan.moves[row.id];
+      if (!entry || entry.applied) continue;
 
-    for (const [visitId, target] of Object.entries(plan.moves)) {
-      const from = startOf.get(visitId);
-      if (from === undefined) continue;
+      const minutes = Math.round(
+        (new Date(entry.startsAt).getTime() -
+          new Date(row.starts_at).getTime()) /
+          60_000,
+      );
 
-      const minutes = Math.round((new Date(target).getTime() - from) / 60_000);
-      if (minutes !== 0) out[visitId] = minutes;
+      if (minutes !== 0) out[row.id] = minutes;
     }
 
     return out;
@@ -702,9 +803,37 @@ export function DayGrid({
       setError(null);
       setResized((current) => ({ ...current, [rowId]: shift }));
 
+      const minutes =
+        Math.round(
+          (new Date(row.ends_at).getTime() -
+            new Date(row.starts_at).getTime()) /
+            60_000,
+        ) + shift;
+
       const endsAt = new Date(
         new Date(row.ends_at).getTime() + shift * 60_000,
       ).toISOString();
+
+      /* In a plan the length is proposed, not set. Same gesture, and the
+         calendar is untouched until Apply. */
+      if (plan) {
+        startSaving(async () => {
+          const result = await setPlannedMove({
+            planId: plan.id,
+            appointmentId: rowId,
+            targetStartsAt: shifted(
+              row.starts_at,
+              plannedOffset[rowId] ?? 0,
+            ),
+            targetMinutes: minutes,
+            orgId: plan.orgId,
+          });
+
+          if (!result.ok) setError(result.message);
+        });
+
+        return;
+      }
 
       startSaving(async () => {
         const result = await resizeAppointment(rowId, endsAt);
@@ -747,9 +876,23 @@ export function DayGrid({
 
       setError(null);
 
-      const startsAt = new Date(
-        new Date(row.starts_at).getTime() + shift * 60_000,
-      ).toISOString();
+      const startsAt = shifted(row.starts_at, shift);
+
+      if (plan) {
+        startSaving(async () => {
+          const result = await setPlannedMove({
+            planId: plan.id,
+            appointmentId: rowId,
+            targetStartsAt: startsAt,
+            targetEmployeeId: target.id,
+            orgId: plan.orgId,
+          });
+
+          if (!result.ok) setError(result.message);
+        });
+
+        return;
+      }
 
       startSaving(async () => {
         const result = await reassignAppointment({
@@ -777,35 +920,58 @@ export function DayGrid({
      * Apply.
      */
     if (plan) {
-      const already = plannedOffset[visitId] ?? 0;
-      const anchor = rows
-        .filter((row) => row.visit_id === visitId)
-        .reduce(
-          (min, row) => Math.min(min, new Date(row.starts_at).getTime()),
-          Number.POSITIVE_INFINITY,
-        );
-
-      const target = new Date(
-        anchor + (already + shift) * 60_000,
-      ).toISOString();
+      /*
+       * One entry per row of the visit, because the table is appointment-
+       * grained and "the whole visit moves" is what writing all of them
+       * means. Each row keeps its own offset from where it currently is, so
+       * the shape of the visit survives — a founding and its finishing stay
+       * the same distance apart.
+       */
+      const members = rows.filter((r) => r.visit_id === visitId);
 
       startSaving(async () => {
-        const result = await setPlannedMove({
-          planId: plan.id,
-          visitId,
-          targetStartsAt: target,
-          orgId: plan.orgId,
-        });
+        for (const member of members) {
+          const already = plannedOffset[member.id] ?? 0;
 
-        if (!result.ok) {
-          setMoved((current) => {
-            const next = { ...current };
-            delete next[visitId];
+          const before = plan.moves[member.id] ?? null;
+          const after = {
+            startsAt: shifted(member.starts_at, already + shift),
+            employeeId: before?.employeeId ?? null,
+            minutes: before?.minutes ?? null,
+          };
 
-            return next;
+          remember({
+            appointmentId: member.id,
+            before: before
+              ? {
+                  startsAt: before.startsAt,
+                  employeeId: before.employeeId,
+                  minutes: before.minutes,
+                }
+              : null,
+            after,
           });
 
-          setError(result.message);
+          const result = await setPlannedMove({
+            planId: plan.id,
+            appointmentId: member.id,
+            targetStartsAt: after.startsAt,
+            targetEmployeeId: after.employeeId,
+            targetMinutes: after.minutes,
+            orgId: plan.orgId,
+          });
+
+          if (!result.ok) {
+            setMoved((current) => {
+              const next = { ...current };
+              delete next[visitId];
+
+              return next;
+            });
+
+            setError(result.message);
+            return;
+          }
         }
       });
 
@@ -971,6 +1137,31 @@ export function DayGrid({
               Show {endedCount} cancelled
             </span>
           </label>
+        )}
+
+        {plan && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={stepBack}
+              disabled={history.done.length === 0 || saving}
+              className="border border-line px-2.5 py-1 transition-colors hover:border-ink disabled:opacity-40"
+              title="Undo"
+              aria-label="Undo"
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              onClick={stepForward}
+              disabled={history.undone.length === 0 || saving}
+              className="border border-line px-2.5 py-1 transition-colors hover:border-ink disabled:opacity-40"
+              title="Redo"
+              aria-label="Redo"
+            >
+              ↷
+            </button>
+          </div>
         )}
 
         <div className="ml-auto flex items-center gap-2">
@@ -1153,13 +1344,21 @@ export function DayGrid({
                     /* A block already moved this session carries its own
                        offset; adding the plan's as well would double it. */
                     (moved[row.visit_id] === undefined
-                      ? (plannedOffset[row.visit_id] ?? 0)
+                      ? (plannedOffset[row.id] ?? 0)
                       : 0);
+
+                  const entry = plan?.moves[row.id] ?? null;
 
                   const planned =
                     plan !== null &&
-                    (plannedOffset[row.visit_id] !== undefined ||
-                      moved[row.visit_id] !== undefined);
+                    (plannedOffset[row.id] !== undefined ||
+                      moved[row.visit_id] !== undefined ||
+                      entry !== null);
+
+                  /* An entry the database would not take. Kept in the plan
+                     with its reason rather than silently dropped, which is
+                     the whole point of applying partially. */
+                  const refused = entry?.refused ?? null;
 
                   const isThisRow = drag?.rowId === row.id && drag.moved;
                   const resizingThis = isThisRow && drag!.resizing;
@@ -1196,7 +1395,11 @@ export function DayGrid({
                       onPointerUp={dragEnd}
                       onPointerCancel={dragEnd}
                       disabled={!canMark && !canManage}
-                      title={`${row.customer?.full_name ?? ""} · ${label(row)} · ${salonTime(row.starts_at, timezone)}–${salonTime(row.ends_at, timezone)} · ${status.label}`}
+                      title={
+                        refused
+                          ? `Refused: ${refused}`
+                          : `${row.customer?.full_name ?? ""} · ${label(row)} · ${salonTime(row.starts_at, timezone)}–${salonTime(row.ends_at, timezone)} · ${status.label}`
+                      }
                       aria-label={`${row.customer?.full_name ?? "Appointment"}, ${label(row)}, ${salonTime(row.starts_at, timezone)}, ${status.label}`}
                       className={`absolute overflow-hidden rounded-sm border-l-[3px] px-1.5 py-0.5 text-left text-[0.6875rem] leading-[1.35] ${
                         brush
@@ -1212,9 +1415,11 @@ export function DayGrid({
                         /* A proposal, not a booking. Dashed, so it reads as
                            unfinished at a glance rather than needing the
                            legend explained. */
-                        planned && !dragging
-                          ? "border border-dashed border-ink/50 ring-1 ring-ink/20"
-                          : ""
+                        refused
+                          ? "ring-2 ring-red-600"
+                          : planned && !dragging
+                            ? "border border-dashed border-ink/50 ring-1 ring-ink/20"
+                            : ""
                       }`}
                       style={{
                         /* `touch-action: none` is what stops a drag on the
@@ -1254,6 +1459,12 @@ export function DayGrid({
                           </span>
                         )}
                       </p>
+
+                      {refused && (
+                        <p className="truncate font-medium text-red-700">
+                          {refused}
+                        </p>
+                      )}
 
                       {show.style && (
                         <p className="truncate">

@@ -3,11 +3,12 @@ import Link from "next/link";
 
 import { requirePermission } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
-import { salonDateKey, salonDayLabelLong } from "@/lib/site/datetime";
+import { salonDateKey, salonDayLabel, salonDayLabelLong } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 import { DayGrid, type Row } from "../day-grid";
+import { NewPlanTab } from "./new-plan-tab";
 import { PlanBar } from "./plan-bar";
 
 /**
@@ -86,24 +87,52 @@ export default async function PlanPage({
   ]);
 
   const plans = plansData ?? [];
+
+  /* The seven days around the one being planned, so a week can be worked
+     through without going back to the calendar each time. */
+  const week = Array.from({ length: 7 }, (_, i) => shiftDays(day, i - 3));
   const active = plans.find((p) => p.id === params.plan) ?? plans[0] ?? null;
 
-  /* The plan's moves, as target start times by visit. The grid turns them
-     into offsets against wherever the calendar currently has each visit, so a
-     booking moved by hand since simply shrinks the proposal. */
-  const moves: Record<string, string> = {};
+  /*
+   * The plan's entries, by appointment. The grid turns each into an offset
+   * against wherever the calendar currently has that row, so a booking moved
+   * by hand since the plan was written simply shrinks the proposal to
+   * nothing rather than applying twice.
+   */
+  const moves: Record<
+    string,
+    {
+      startsAt: string;
+      employeeId: string | null;
+      minutes: number | null;
+      refused: string | null;
+      applied: boolean;
+    }
+  > = {};
+
   let moveCount = 0;
+  let refusedCount = 0;
 
   if (active) {
     const { data: moveRows } = await supabase
       .from("schedule_plan_moves")
-      .select("visit_id, target_starts_at")
+      .select(
+        "appointment_id, target_starts_at, target_employee_id, target_minutes, refused_reason, applied_at",
+      )
       .eq("plan_id", active.id)
       .is("deleted_at", null);
 
     for (const move of moveRows ?? []) {
-      moves[move.visit_id] = move.target_starts_at;
-      moveCount++;
+      moves[move.appointment_id] = {
+        startsAt: move.target_starts_at,
+        employeeId: move.target_employee_id,
+        minutes: move.target_minutes,
+        refused: move.refused_reason,
+        applied: move.applied_at !== null,
+      };
+
+      if (move.applied_at === null) moveCount++;
+      if (move.refused_reason && move.applied_at === null) refusedCount++;
     }
   }
 
@@ -159,9 +188,16 @@ export default async function PlanPage({
         </div>
       </header>
 
-      {/* The tabs. More than one plan for a day is normal, not an edge case. */}
-      {plans.length > 1 && (
-        <div className="flex flex-wrap gap-1 border-b border-line">
+      {/*
+        The tabs, and the + beside them — sheets in a spreadsheet, which is
+        the shape this was asked for in. More than one plan for a day is
+        normal rather than an edge case: "Thursday" beside "Thursday, if Fikir
+        is out". The week strip underneath is the other half of the same idea,
+        because a plan belongs to a DATE and flipping between days is the
+        commoner move than flipping between versions of one.
+      */}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1 border-b border-line">
           {plans.map((p) => (
             <Link
               key={p.id}
@@ -177,13 +213,34 @@ export default async function PlanPage({
               {p.applied_at && <span className="ml-2 text-xs">applied</span>}
             </Link>
           ))}
+
+          <NewPlanTab planDate={day} orgId={org.id} profileId={profile.id} />
         </div>
-      )}
+
+        <div className="flex flex-wrap gap-1 text-sm">
+          {week.map((d) => (
+            <Link
+              key={d}
+              href={`/staff/plan?date=${d}`}
+              aria-current={d === day ? "page" : undefined}
+              className={`border px-2.5 py-1 tabular-nums transition-colors ${
+                d === day
+                  ? "border-ink bg-surface-sunk"
+                  : "border-line text-ink-muted hover:border-ink hover:text-ink"
+              }`}
+              title={d}
+            >
+              {salonDayLabel(d)}
+            </Link>
+          ))}
+        </div>
+      </div>
 
       <PlanBar
         planId={active?.id ?? null}
         planName={active?.name ?? null}
         moveCount={moveCount}
+        refusedCount={refusedCount}
         appliedAt={active?.applied_at ?? null}
         planDate={day}
         orgId={org.id}

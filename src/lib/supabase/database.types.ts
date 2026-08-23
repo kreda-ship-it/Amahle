@@ -992,34 +992,46 @@ export type Database = {
       }
       schedule_plan_moves: {
         Row: {
+          applied_at: string | null
+          appointment_id: string
           created_at: string
           deleted_at: string | null
           id: string
           org_id: string
           plan_id: string
+          refused_reason: string | null
+          target_employee_id: string | null
+          target_minutes: number | null
           target_starts_at: string
           updated_at: string
-          visit_id: string
         }
         Insert: {
+          applied_at?: string | null
+          appointment_id: string
           created_at?: string
           deleted_at?: string | null
           id?: string
           org_id: string
           plan_id: string
+          refused_reason?: string | null
+          target_employee_id?: string | null
+          target_minutes?: number | null
           target_starts_at: string
           updated_at?: string
-          visit_id: string
         }
         Update: {
+          applied_at?: string | null
+          appointment_id?: string
           created_at?: string
           deleted_at?: string | null
           id?: string
           org_id?: string
           plan_id?: string
+          refused_reason?: string | null
+          target_employee_id?: string | null
+          target_minutes?: number | null
           target_starts_at?: string
           updated_at?: string
-          visit_id?: string
         }
         Relationships: [
           {

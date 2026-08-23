@@ -19,6 +19,7 @@ export function PlanBar({
   planId,
   planName,
   moveCount,
+  refusedCount,
   appliedAt,
   planDate,
   orgId,
@@ -27,6 +28,8 @@ export function PlanBar({
   planId: string | null;
   planName: string | null;
   moveCount: number;
+  /** Entries the database would not take. They stay in the plan. */
+  refusedCount: number;
   appliedAt: string | null;
   planDate: string;
   orgId: string;
@@ -59,9 +62,20 @@ export function PlanBar({
     start(async () => {
       const result = await applyPlan(planId);
 
+      /*
+        Partial by design since migration 044. A plan of fifteen moves where
+        one has been overtaken by a phone booking is not fifteen bad moves,
+        and refusing all of them means doing the work again to change nothing.
+        What makes that safe is that nothing is lost: refusals keep their
+        reason and stay in the plan, marked on the block itself.
+      */
       setMessage(
         result.ok
-          ? `Applied. ${result.moved} ${result.moved === 1 ? "visit" : "visits"} moved.`
+          ? `Applied ${result.moved}. ${
+              refusedCount > 0
+                ? `${refusedCount} still refused — they are marked in red.`
+                : "Nothing left."
+            }`
           : result.message,
       );
 
@@ -138,8 +152,13 @@ export function PlanBar({
 
       <span className="text-ink-muted">
         {moveCount === 0
-          ? "Nothing moved yet — drag an appointment."
-          : `${moveCount} ${moveCount === 1 ? "move" : "moves"}, saved as you go.`}
+          ? "Nothing changed yet — drag, reassign or resize an appointment."
+          : `${moveCount} ${moveCount === 1 ? "change" : "changes"}, saved as you go.`}
+        {refusedCount > 0 && (
+          <span className="ml-2 text-red-700">
+            {refusedCount} refused
+          </span>
+        )}
       </span>
 
       {/* A plan reserves nothing, and somebody will assume otherwise. */}
