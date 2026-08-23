@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { can, requireProfile } from "@/lib/auth";
+import { can, currentEmployeeId, requireProfile } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
 import { salonDateKey, salonDayLabel } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
@@ -64,7 +64,15 @@ export default async function StaffWeekPage({
   const org = await getOrganization();
   const supabase = await createSupabaseServerClient();
 
-  const mayManage = await can("appointment.manage");
+  const [mayManage, employee] = await Promise.all([
+    can("appointment.manage"),
+    currentEmployeeId(),
+  ]);
+
+  /* A stylist holds no appointment permission and may still mark her own
+     work — migration 042. The database decides which rows; this decides
+     whether the key is a set of buttons or a legend. */
+  const mayMark = mayManage || employee !== null;
   const today = salonDateKey(new Date(), org.timezone);
 
   const anchor = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? "")
@@ -187,6 +195,7 @@ export default async function StaffWeekPage({
           columns={heads}
           timezone={org.timezone}
           canManage={mayManage}
+          canMark={mayMark}
           columnKind="date"
           plan={null}
         />

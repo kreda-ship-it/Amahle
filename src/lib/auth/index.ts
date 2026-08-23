@@ -130,3 +130,30 @@ export const requirePermission = cache(
     return profile;
   },
 );
+
+/**
+ * The logged-in person's employee record, if they have one.
+ *
+ * A profile can log in; an employee performs services. They usually point at
+ * each other and the cases where they do not are the ones that matter — an
+ * owner who never touches hair has a profile and no employee row, and a
+ * stylist who does not use the system has an employee row and no profile.
+ *
+ * Screens need this to answer "is any of what I am looking at MINE", which
+ * since migration 042 is a real question: a stylist holds no appointment
+ * permission and may still mark her own customer as arrived.
+ *
+ * Asks the database rather than trusting anything from the browser, and goes
+ * through `current_employee_id()` — the same function the row-level security
+ * policies call — so a screen and a policy can never disagree about who
+ * somebody is.
+ */
+export const currentEmployeeId = cache(async (): Promise<string | null> => {
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.rpc("current_employee_id");
+
+  if (error) return null;
+
+  return data ?? null;
+});

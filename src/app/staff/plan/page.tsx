@@ -200,6 +200,7 @@ export default async function PlanPage({
           columns={heads}
           timezone={org.timezone}
           canManage
+          canMark
           columnKind="employee"
           plan={
             active && !active.applied_at

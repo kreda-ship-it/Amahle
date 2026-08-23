@@ -1582,6 +1582,19 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_appointment_status: {
+        Args: { p_appointment_id: string; p_status: string }
+        Returns: undefined
+      }
+      update_my_employee_details: {
+        Args: {
+          p_bio?: string
+          p_email?: string
+          p_phone?: string
+          p_photo_path?: string
+        }
+        Returns: undefined
+      }
       visit_lines: {
         Args: { p_org_id: string; p_selection: Json }
         Returns: {

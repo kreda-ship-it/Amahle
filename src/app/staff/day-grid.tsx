@@ -69,7 +69,15 @@ type Props = {
   /** In the order they are drawn, left to right. */
   columns: { id: string; label: string }[];
   timezone: string;
+  /** May drag, reassign and resize. `appointment.manage`. */
   canManage: boolean;
+  /*
+   * May use the highlighter. A wider group than canManage since migration
+   * 042: a stylist holds no appointment permission at all, and may still mark
+   * her own customer arrived or finished. The database decides which rows —
+   * this only decides whether the key is a set of buttons or a legend.
+   */
+  canMark: boolean;
   /*
    * What a column IS, which the grid needs for one reason only: dragging
    * sideways. Where columns are dates, crossing one is a change of day and so
@@ -258,6 +266,7 @@ export function DayGrid({
   columns,
   timezone,
   canManage,
+  canMark,
   columnKind,
   plan,
 }: Props) {
@@ -431,7 +440,7 @@ export function DayGrid({
   const heads = columns;
 
   function mark(row: Row) {
-    if (!brush || !canManage) return;
+    if (!brush || !canMark) return;
 
     const was = overrides[row.id] ?? row.status;
     if (was === brush) return;
@@ -759,7 +768,7 @@ export function DayGrid({
     <>
       {/* ---------- the key, which is also the highlighter ---------- */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-4">
-        {canManage && (
+        {canMark && (
           <span className="label text-ink-muted">
             {brush ? "Tap to mark" : "Pick a status"}
           </span>
@@ -772,14 +781,14 @@ export function DayGrid({
             <button
               key={status.key}
               type="button"
-              disabled={!canManage}
-              aria-pressed={canManage ? active : undefined}
+              disabled={!canMark}
+              aria-pressed={canMark ? active : undefined}
               onClick={() => setBrush(active ? null : status.key)}
               className={`flex items-center gap-2 border px-2 py-1 text-sm transition-colors ${
                 active
                   ? "border-ink bg-surface-sunk"
                   : "border-transparent hover:border-line"
-              } ${canManage ? "" : "cursor-default"}`}
+              } ${canMark ? "" : "cursor-default"}`}
             >
               {/* The mark carries the colour; the word carries the meaning.
                   Around one man in twelve cannot reliably separate red from
@@ -976,15 +985,17 @@ export function DayGrid({
                       onPointerMove={dragMove}
                       onPointerUp={dragEnd}
                       onPointerCancel={dragEnd}
-                      disabled={!canManage}
+                      disabled={!canMark && !canManage}
                       title={`${row.customer?.full_name ?? ""} · ${label(row)} · ${salonTime(row.starts_at, timezone)}–${salonTime(row.ends_at, timezone)} · ${status.label}`}
                       aria-label={`${row.customer?.full_name ?? "Appointment"}, ${label(row)}, ${salonTime(row.starts_at, timezone)}, ${status.label}`}
                       className={`absolute overflow-hidden rounded-sm border-l-[3px] px-1.5 py-0.5 text-left text-[0.6875rem] leading-[1.35] ${
-                        !canManage
-                          ? "cursor-default"
-                          : brush
+                        brush
+                          ? canMark
                             ? "cursor-pointer hover:brightness-95"
-                            : "cursor-grab active:cursor-grabbing"
+                            : "cursor-default"
+                          : canManage
+                            ? "cursor-grab active:cursor-grabbing"
+                            : "cursor-default"
                       } ${ended ? "opacity-50" : ""} ${
                         dragging ? "z-10 shadow-lg ring-1 ring-ink" : ""
                       } ${

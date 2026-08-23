@@ -53,34 +53,38 @@ export type ApplyResult =
 export async function applyStatuses(
   changes: StatusChange[],
 ): Promise<ApplyResult> {
-  await requirePermission("appointment.manage");
-
+  /*
+   * NO requirePermission HERE, DELIBERATELY — and this is the one place in
+   * the staff area where its absence is the correct answer rather than an
+   * oversight.
+   *
+   * Since migration 042 the rule is not "may this role change a status" but
+   * "may this person change THIS row's status". The desk may set any status on
+   * anything; a stylist may set the four operational ones on her own
+   * appointments and nothing else. `has_permission()` cannot express the
+   * second half, because it answers about roles and this question is about a
+   * row. So the decision moved into set_appointment_status(), and asking a
+   * coarser question here would refuse the stylist before the database ever
+   * saw her.
+   */
   if (changes.length === 0) return { ok: true, changed: 0 };
 
   const supabase = await createSupabaseServerClient();
 
   /*
-   * One update per distinct status, not one per row. Marking twelve
-   * appointments cancelled is a single statement; the batching is by value
-   * because that is the only thing the rows have in common.
+   * One call per row rather than one statement per status. That is more round
+   * trips than the UPDATE it replaces, and it buys the only path a status
+   * changes by: a stylist marking her own client done and a receptionist
+   * cancelling a booking travel the same code and are audited identically.
+   * The batches here are a handful of rows — a visit, or a tap.
    */
-  const byStatus = new Map<string, string[]>();
-
-  for (const change of changes) {
-    const existing = byStatus.get(change.status);
-    if (existing) existing.push(change.id);
-    else byStatus.set(change.status, [change.id]);
-  }
-
   let changed = 0;
 
-  for (const [status, ids] of byStatus) {
-    const { data, error } = await supabase
-      .from("appointments")
-      .update({ status })
-      .in("id", ids)
-      .is("deleted_at", null)
-      .select("id");
+  for (const change of changes) {
+    const { error } = await supabase.rpc("set_appointment_status", {
+      p_appointment_id: change.id,
+      p_status: change.status,
+    });
 
     if (error) {
       console.error("applyStatuses failed", error);
@@ -88,13 +92,14 @@ export async function applyStatuses(
       return {
         ok: false,
         message:
-          changed > 0
-            ? `Only ${changed} of ${changes.length} could be changed. Reload and try the rest.`
-            : "Those could not be changed. Reload and try again.",
+          error.message ||
+          (changed > 0
+            ? `Only ${changed} of ${changes.length} could be changed.`
+            : "Those could not be changed. Reload and try again."),
       };
     }
 
-    changed += data?.length ?? 0;
+    changed += 1;
   }
 
   // The day view is force-dynamic, but the router still holds a client-side

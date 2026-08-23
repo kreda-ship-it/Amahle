@@ -32,6 +32,7 @@ const ITEMS: NavItem[] = [
   { label: "Take a booking", href: "/staff/book", built: true,  permission: "appointment.create" },
   { label: "Tomorrow's calls", href: "/staff/calls", built: true, permission: null },
   { label: "Who does what", href: "/staff/who-does-what", built: true, permission: null },
+  { label: "You",       href: "/staff/me",        built: true,  permission: null },
   { label: "Customers", href: "/staff/customers", built: false, permission: "customer.view" },
   { label: "Team",      href: "/staff/team",      built: false, permission: "employee.record.manage" },
   { label: "Services",  href: "/staff/services",  built: false, permission: "service.manage" },
