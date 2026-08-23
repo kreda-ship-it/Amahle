@@ -28,6 +28,7 @@ const ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/staff",           built: true,  permission: null },
   { label: "The day",   href: "/staff/day",       built: true,  permission: null },
   { label: "The week",  href: "/staff/week",      built: true,  permission: null },
+  { label: "Planning",  href: "/staff/plan",      built: true,  permission: "appointment.manage" },
   { label: "Take a booking", href: "/staff/book", built: true,  permission: "appointment.create" },
   { label: "Tomorrow's calls", href: "/staff/calls", built: true, permission: null },
   { label: "Who does what", href: "/staff/who-does-what", built: true, permission: null },

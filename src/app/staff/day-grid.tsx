@@ -6,6 +6,7 @@ import { STATUSES, statusMeta, type StatusKey } from "@/lib/appointments/status"
 import { salonMinutes, salonTime } from "@/lib/site/datetime";
 
 import { applyStatuses, moveVisit, type StatusChange } from "./actions";
+import { setPlannedMove } from "./plan-actions";
 
 /**
  * The day, as a grid.
@@ -72,6 +73,21 @@ type Props = {
    * on the day view rather than silently doing something else.
    */
   columnKind: "employee" | "date";
+
+  /*
+   * The plan being edited, or null for the live calendar.
+   *
+   * Its presence is the whole difference between the two modes, and there is
+   * deliberately no second component. Two copies of the hardest UI in the app
+   * would drift, and a planner that disagrees with the real calendar is worse
+   * than no planner.
+   *
+   * `moves` is target start times by visit — what the plan proposes, laid over
+   * whatever the calendar currently says. Because the plan holds CHANGES and
+   * not a copy of the day, a booking taken while it is open simply appears;
+   * there is nothing to keep in step.
+   */
+  plan: { id: string; orgId: string; moves: Record<string, string> } | null;
 };
 
 /* The salon's day, wider than its opening hours so an overrun is visible
@@ -95,6 +111,7 @@ const DRAG_THRESHOLD = 4;
 /* One shared empty object, so "nothing is pending" is the same reference on
    every render rather than a fresh one that rebuilds the day below it. */
 const NOTHING_PENDING: Record<string, string> = {};
+const NOTHING_PLANNED: Record<string, number> = {};
 
 /** A block, once it knows where it sits and who it shares the space with. */
 type Placed = {
@@ -236,6 +253,7 @@ export function DayGrid({
   timezone,
   canManage,
   columnKind,
+  plan,
 }: Props) {
   /* Measured rather than assumed: columns share the available width, so how
      wide one is depends on the screen and on how many stylists work here. */
@@ -281,6 +299,35 @@ export function DayGrid({
 
   /** A move that has been sent but not yet come back, so the block stays put. */
   const [moved, setMoved] = useState<Record<string, number>>({});
+
+  /*
+   * Where the plan wants each visit, as an offset in minutes from where the
+   * calendar actually has it. Computed rather than stored, so a booking moved
+   * by hand since the plan was written shows the plan's intent shrinking to
+   * nothing rather than the plan quietly applying twice.
+   */
+  const plannedOffset = useMemo(() => {
+    if (!plan) return NOTHING_PLANNED;
+
+    const out: Record<string, number> = {};
+    const startOf = new Map<string, number>();
+
+    for (const row of rows) {
+      const at = new Date(row.starts_at).getTime();
+      const seen = startOf.get(row.visit_id);
+      if (seen === undefined || at < seen) startOf.set(row.visit_id, at);
+    }
+
+    for (const [visitId, target] of Object.entries(plan.moves)) {
+      const from = startOf.get(visitId);
+      if (from === undefined) continue;
+
+      const minutes = Math.round((new Date(target).getTime() - from) / 60_000);
+      if (minutes !== 0) out[visitId] = minutes;
+    }
+
+    return out;
+  }, [plan, rows]);
 
   useEffect(() => {
     if (!undoable) return;
@@ -469,6 +516,49 @@ export function DayGrid({
 
     setError(null);
     setMoved((current) => ({ ...current, [visitId]: shift }));
+
+    /*
+     * IN PLANNING MODE NOTHING REACHES THE CALENDAR. The same gesture writes a
+     * proposed target instead, and the block sits where the plan wants it
+     * until somebody applies or discards. That is the one-way rule: live
+     * bookings flow into a plan automatically, plan changes flow out only on
+     * Apply.
+     */
+    if (plan) {
+      const already = plannedOffset[visitId] ?? 0;
+      const anchor = rows
+        .filter((row) => row.visit_id === visitId)
+        .reduce(
+          (min, row) => Math.min(min, new Date(row.starts_at).getTime()),
+          Number.POSITIVE_INFINITY,
+        );
+
+      const target = new Date(
+        anchor + (already + shift) * 60_000,
+      ).toISOString();
+
+      startSaving(async () => {
+        const result = await setPlannedMove({
+          planId: plan.id,
+          visitId,
+          targetStartsAt: target,
+          orgId: plan.orgId,
+        });
+
+        if (!result.ok) {
+          setMoved((current) => {
+            const next = { ...current };
+            delete next[visitId];
+
+            return next;
+          });
+
+          setError(result.message);
+        }
+      });
+
+      return;
+    }
 
     startSaving(async () => {
       const result = await moveVisit(visitId, shift);
@@ -723,7 +813,17 @@ export function DayGrid({
                    */
                   const offsetMinutes =
                     (drag?.visitId === row.visit_id ? drag.shift : 0) +
-                    (moved[row.visit_id] ?? 0);
+                    (moved[row.visit_id] ?? 0) +
+                    /* A block already moved this session carries its own
+                       offset; adding the plan's as well would double it. */
+                    (moved[row.visit_id] === undefined
+                      ? (plannedOffset[row.visit_id] ?? 0)
+                      : 0);
+
+                  const planned =
+                    plan !== null &&
+                    (plannedOffset[row.visit_id] !== undefined ||
+                      moved[row.visit_id] !== undefined);
 
                   const offset = (offsetMinutes / 60) * pxPerHour;
                   const dragging = drag?.visitId === row.visit_id && drag.moved;
@@ -748,6 +848,13 @@ export function DayGrid({
                             : "cursor-grab active:cursor-grabbing"
                       } ${ended ? "opacity-50" : ""} ${
                         dragging ? "z-10 shadow-lg ring-1 ring-ink" : ""
+                      } ${
+                        /* A proposal, not a booking. Dashed, so it reads as
+                           unfinished at a glance rather than needing the
+                           legend explained. */
+                        planned && !dragging
+                          ? "border border-dashed border-ink/50 ring-1 ring-ink/20"
+                          : ""
                       }`}
                       style={{
                         /* `touch-action: none` is what stops a drag on the

@@ -990,6 +990,105 @@ export type Database = {
           },
         ]
       }
+      schedule_plan_moves: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          org_id: string
+          plan_id: string
+          target_starts_at: string
+          updated_at: string
+          visit_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          org_id: string
+          plan_id: string
+          target_starts_at: string
+          updated_at?: string
+          visit_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          org_id?: string
+          plan_id?: string
+          target_starts_at?: string
+          updated_at?: string
+          visit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_plan_moves_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_plan_moves_plan_same_org"
+            columns: ["plan_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "schedule_plans"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      schedule_plans: {
+        Row: {
+          applied_at: string | null
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          id: string
+          name: string
+          org_id: string
+          plan_date: string
+          updated_at: string
+        }
+        Insert: {
+          applied_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          id?: string
+          name: string
+          org_id: string
+          plan_date: string
+          updated_at?: string
+        }
+        Update: {
+          applied_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          org_id?: string
+          plan_date?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_plans_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_plans_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       service_categories: {
         Row: {
           created_at: string
@@ -1308,6 +1407,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_plan: { Args: { p_plan_id: string }; Returns: number }
       buffer_minutes_for: { Args: { p_service_id: string }; Returns: number }
       create_appointment: {
         Args: {

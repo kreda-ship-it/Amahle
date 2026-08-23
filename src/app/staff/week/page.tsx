@@ -188,6 +188,7 @@ export default async function StaffWeekPage({
           timezone={org.timezone}
           canManage={mayManage}
           columnKind="date"
+          plan={null}
         />
       )}
     </div>

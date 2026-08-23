@@ -147,6 +147,7 @@ export default async function StaffDayPage({
           timezone={org.timezone}
           canManage={mayManage}
           columnKind="employee"
+          plan={null}
         />
       )}
     </div>
