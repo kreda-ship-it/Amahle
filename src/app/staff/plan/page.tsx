@@ -202,6 +202,8 @@ export default async function PlanPage({
           canManage
           canMark
           columnKind="employee"
+          pickerDate={day}
+          today={today}
           plan={
             active && !active.applied_at
               ? { id: active.id, orgId: org.id, moves }

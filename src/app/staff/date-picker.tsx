@@ -26,6 +26,16 @@ type Props = {
   selected: string;
   /** The salon's today, which is not necessarily the browser's. */
   today: string;
+  /*
+   * The status key, rendered underneath the dates.
+   *
+   * It lives here rather than above the grid because both are the same kind
+   * of thing — a small panel you consult rather than work in — and because
+   * the row it used to occupy was a row of the calendar's width taken from
+   * the columns. Passed in rather than built here: the key is also the
+   * highlighter, and which statuses it offers is the grid's business.
+   */
+  statusKey?: React.ReactNode;
 };
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -90,9 +100,10 @@ function shiftMonth(year: number, month: number, by: number) {
   return { year: when.getUTCFullYear(), month: when.getUTCMonth() + 1 };
 }
 
-export function DatePicker({ selected, today }: Props) {
+export function DatePicker({ selected, today, statusKey }: Props) {
   const [selYear, selMonth] = parts(selected);
   const [shape, setShape] = useState<"month" | "week">("month");
+  const [shown, setShown] = useState(true);
   const [view, setView] = useState({ year: selYear, month: selMonth });
 
   const week = weekOf(selected);
@@ -105,6 +116,28 @@ export function DatePicker({ selected, today }: Props) {
 
   function step(by: number) {
     setView((current) => shiftMonth(current.year, current.month, by));
+  }
+
+  /*
+   * Folded away to a single button. The month grid is about 250px tall and
+   * the grid below wants every one of them on a laptop — so it collapses to
+   * the one thing worth keeping visible, which is the date you are on.
+   */
+  if (!shown) {
+    return (
+      <div className="flex shrink-0 items-start gap-2">
+        <button
+          type="button"
+          onClick={() => setShown(true)}
+          aria-expanded={false}
+          title="Show the calendar"
+          className="flex items-center gap-2 border border-line bg-surface px-3 py-2 text-sm transition-colors hover:border-ink"
+        >
+          <span aria-hidden>🗓</span>
+          <span className="tabular-nums">{selected}</span>
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -196,14 +229,30 @@ export function DatePicker({ selected, today }: Props) {
           Today
         </Link>
 
-        <button
-          type="button"
-          onClick={() => setShape(shape === "month" ? "week" : "month")}
-          className="label text-ink-muted transition-colors hover:text-ink"
-        >
-          {shape === "month" ? "Week" : "Month"}
-        </button>
+        <span className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShape(shape === "month" ? "week" : "month")}
+            className="label text-ink-muted transition-colors hover:text-ink"
+          >
+            {shape === "month" ? "Week" : "Month"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShown(false)}
+            aria-expanded
+            title="Hide the calendar"
+            className="label text-ink-muted transition-colors hover:text-ink"
+          >
+            Hide
+          </button>
+        </span>
       </div>
+
+      {statusKey && (
+        <div className="mt-2 border-t border-line pt-2">{statusKey}</div>
+      )}
     </div>
   );
 }

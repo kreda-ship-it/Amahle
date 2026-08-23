@@ -12,6 +12,7 @@ import {
   resizeAppointment,
   type StatusChange,
 } from "./actions";
+import { DatePicker } from "./date-picker";
 import { setPlannedMove } from "./plan-actions";
 
 /**
@@ -87,6 +88,15 @@ type Props = {
    * on the day view rather than silently doing something else.
    */
   columnKind: "employee" | "date";
+  /*
+   * The day the calendar in the corner should highlight, and the salon's own
+   * today. Given here rather than rendered by the page because the status key
+   * sits inside that panel, and the key is also the highlighter — so it has
+   * to be where the brush state is. Omit both on a screen that wants no
+   * calendar.
+   */
+  pickerDate?: string;
+  today?: string;
 
   /*
    * The plan being edited, or null for the live calendar.
@@ -268,6 +278,8 @@ export function DayGrid({
   canManage,
   canMark,
   columnKind,
+  pickerDate,
+  today,
   plan,
 }: Props) {
   /* Measured rather than assumed: columns share the available width, so how
@@ -436,6 +448,14 @@ export function DayGrid({
   }, []);
 
   const gridHeight = ((DAY_END - DAY_START) / 60) * pxPerHour;
+
+  /*
+   * Shared by the heading grid and the body grid, which have to agree column
+   * for column. Columns take whatever room there is and stop shrinking at
+   * 8.5rem, so four stylists fill a laptop and twelve overflow into a
+   * sideways scroll.
+   */
+  const template = `3.25rem repeat(${columns.length}, minmax(8.5rem, 1fr))`;
 
   const heads = columns;
 
@@ -764,13 +784,13 @@ export function DayGrid({
     });
   }
 
-  return (
+  const statusKey = (
     <>
       {/* ---------- the key, which is also the highlighter ---------- */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {canMark && (
-          <span className="label text-ink-muted">
-            {brush ? "Tap to mark" : "Pick a status"}
+          <span className="label w-full text-ink-muted">
+            {brush ? "Tap a booking to mark it" : "Pick a status to mark with"}
           </span>
         )}
 
@@ -803,6 +823,27 @@ export function DayGrid({
           );
         })}
       </div>
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-4 xl:flex-row-reverse xl:items-start">
+      {/*
+        The calendar and the key together, in one panel. Both are things you
+        consult rather than work in, and each was previously taking a full-
+        width row from a screen whose whole problem is width.
+      */}
+      {pickerDate && today ? (
+        <DatePicker
+          selected={pickerDate}
+          today={today}
+          statusKey={statusKey}
+        />
+      ) : (
+        <div className="xl:w-[17rem] xl:shrink-0">{statusKey}</div>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
 
       {/* ---------- what is shown, and how big ---------- */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
@@ -864,33 +905,43 @@ export function DayGrid({
          * clock stay put while you move through the day.
          */
         <div className="max-h-[68vh] overflow-auto border border-line">
+          {/*
+            TWO GRIDS, NOT ONE, AND THAT IS THE WHOLE FIX FOR STICKY HEADINGS.
+
+            The headings used to be cells in the same grid as the day, carrying
+            `sticky top-0`. They did not stick, and the reason is easy to miss:
+            a grid ITEM's containing block is its own grid area, and a sticky
+            element can never travel outside its containing block. The heading
+            row is one row tall, so the cells stuck for exactly their own
+            height and then left with everything else.
+
+            Lifting the headings into their own grid makes them a direct child
+            of the scrolling pane instead, and a direct child's containing
+            block is the pane. Identical `gridTemplateColumns` on both keeps
+            the two in step, which is why the template is computed once above.
+          */}
           <div
-            ref={gridRef}
-            className="grid"
-            style={{
-              /*
-                Columns share whatever room there is and stop shrinking at
-                8.5rem. Four stylists fill a laptop; twelve overflow and the
-                pane scrolls sideways. A fixed width did neither — it left
-                dead space at one end of the range and forced a scrollbar at
-                the other.
-              */
-              gridTemplateColumns: `3.25rem repeat(${heads.length}, minmax(8.5rem, 1fr))`,
-            }}
+            className="sticky top-0 z-30 grid bg-surface"
+            style={{ gridTemplateColumns: template }}
           >
-            {/* The corner sits above both sticky edges, so neither slides
-                under it. */}
-            <div className="sticky top-0 left-0 z-30 border-r border-b border-line bg-surface" />
+            <div className="border-r border-b border-line" />
 
             {heads.map((head) => (
               <div
                 key={head.id}
-                className="sticky top-0 z-20 truncate border-r border-b border-line bg-surface px-2 py-2 text-center text-sm font-medium last:border-r-0"
+                className="truncate border-r border-b border-line px-2 py-2 text-center text-sm font-medium last:border-r-0"
                 title={head.label}
               >
                 {head.label}
               </div>
             ))}
+          </div>
+
+          <div
+            ref={gridRef}
+            className="grid"
+            style={{ gridTemplateColumns: template }}
+          >
 
             {/* The clock, which stays put as the pane scrolls sideways. */}
             <div
@@ -1124,6 +1175,8 @@ export function DayGrid({
         </div>
       )}
 
+      </div>
+
       {/* ---------- undo, and anything that went wrong ---------- */}
       {/*
         One strip for both kinds of change. A marking and a move are undone the
@@ -1165,6 +1218,6 @@ export function DayGrid({
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }

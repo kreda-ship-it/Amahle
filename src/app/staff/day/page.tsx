@@ -6,7 +6,6 @@ import { salonDateKey, salonDayLabelLong } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-import { DatePicker } from "../date-picker";
 import { DayGrid, type Row } from "../day-grid";
 
 /**
@@ -122,13 +121,8 @@ export default async function StaffDayPage({
     /* The staff shell supplies no padding of its own, so every screen inside
        it sets the same one. Matches the dashboard. */
     <div className="flex flex-col gap-5 p-5 lg:p-8">
-      {/*
-        The calendar sits in the heading rather than beside the grid. Put next
-        to it, it took nineteen rems out of the width the columns need — on a
-        laptop with the sidebar open that is most of a stylist. Up here it
-        costs height instead, and folding it to a week is how you get the
-        height back.
-      */}
+      {/* The calendar and the status key sit together inside the grid, on
+          the right. Both fold away when the day needs the room. */}
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div>
           <p className="label text-ink-muted">
@@ -139,7 +133,6 @@ export default async function StaffDayPage({
           </h1>
         </div>
 
-        <DatePicker selected={day} today={today} />
       </header>
 
       {error ? (
@@ -154,6 +147,8 @@ export default async function StaffDayPage({
           canManage={mayManage}
           canMark={mayMark}
           columnKind="employee"
+          pickerDate={day}
+          today={today}
           plan={null}
         />
       )}

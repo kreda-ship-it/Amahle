@@ -66,9 +66,15 @@
    * appears and a colour smuggled into a component is how that stops being
    * true.
    *
-   * They are warm on purpose: a stock traffic-light green beside this palette
-   * looks like a browser alert dropped onto the page. Each one is dark enough
-   * to read as a solid mark against `--surface`.
+   * DIRECT COLOURS, NOT THE WARM PALETTE — changed 2026-08-23, deliberately
+   * against the rest of the design. An earlier version muted them to sit
+   * beside the terracotta and cream, and they were tasteful and useless:
+   * three of the eight read as the same brown at a glance, which is the one
+   * thing a status colour must never do. Red is red and yellow is yellow.
+   *
+   * This is a tool, not the shopfront. Somebody is finding a cancelled
+   * booking on a grid of forty blocks at arm's length, and a palette that
+   * flatters the page while costing a second per lookup is the wrong trade.
    *
    * COLOUR IS NEVER THE ONLY SIGNAL. Around one man in twelve cannot reliably
    * separate red from green, so every status renders its word as well as its
@@ -76,14 +82,14 @@
    * That also sidesteps the contrast problem entirely: the coloured square has
    * to be visible, not legible.
    */
-  --status-pending: #8a7f70;
-  --status-confirmed: #2f6b3f;
-  --status-checked-in: #2b5f86;
-  --status-in-progress: #a8763a;
-  --status-completed: #4a6b5c;
-  --status-late: #b8563c;
-  --status-cancelled: #8e2f20;
-  --status-no-show: #5a1f14;
+  --status-pending: #64748b;
+  --status-confirmed: #16a34a;
+  --status-checked-in: #2563eb;
+  --status-in-progress: #eab308;
+  --status-completed: #0d9488;
+  --status-late: #f97316;
+  --status-cancelled: #dc2626;
+  --status-no-show: #111827;
 
   color-scheme: light;
 }
