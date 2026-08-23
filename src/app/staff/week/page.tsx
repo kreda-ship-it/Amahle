@@ -101,7 +101,7 @@ export default async function StaffWeekPage({
   const { data, error } = await supabase
     .from("appointments")
     .select(
-      `id, visit_id, starts_at, ends_at, phase, status, employee_requested,
+      `id, visit_id, starts_at, ends_at, blocked_until, phase, status, employee_requested,
        for_name, notes,
        employee:employees (id, full_name),
        service:services (name, is_included_with_others),

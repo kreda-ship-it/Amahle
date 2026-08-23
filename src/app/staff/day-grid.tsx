@@ -40,6 +40,12 @@ export type Row = {
   visit_id: string;
   starts_at: string;
   ends_at: string;
+  /*
+   * When the station is free again — `ends_at` plus the service's cleanup
+   * gap. Drawn as a hatched tail, because an invisible buffer is why two
+   * blocks that look adjacent are refused as overlapping.
+   */
+  blocked_until: string;
   phase: string;
   status: string;
   employee_requested: boolean;
@@ -119,13 +125,32 @@ type Props = {
 const DAY_START = 7 * 60;
 const DAY_END = 22 * 60;
 
-const ZOOMS = [40, 60, 90, 130];
+/*
+ * Seven steps rather than four, and the top of the range is the point. At 40
+ * pixels an hour a quarter of an hour is ten pixels and cannot be aimed at; at
+ * 320 it is eighty and five minutes is a comfortable target. Zooming in is
+ * therefore not just magnification — it is what makes minutes reachable.
+ */
+const ZOOMS = [30, 40, 60, 90, 140, 220, 320];
 
-/* Dragged times land on a quarter hour. Free movement to the minute produces
-   10:07 starts that nobody would say out loud, and the salon's own step is
-   thirty — a quarter is fine enough to squeeze somebody in and coarse enough
-   to be aimed at on a phone. */
-const SNAP = 15;
+/**
+ * How fine a dragged time may land, at this magnification.
+ *
+ * A quarter hour when the day is small: free movement to the minute produces
+ * 10:07 starts nobody would say out loud, and at that size the difference is
+ * two pixels of aim. Five minutes once a block is big enough to place
+ * honestly — which is the answer to "I want to zoom into minutes".
+ *
+ * Tied to the zoom rather than offered as its own control, because the two
+ * are the same question asked twice: how precisely can you see, and how
+ * precisely may you act.
+ */
+function snapFor(pxPerHour: number): number {
+  if (pxPerHour >= 220) return 5;
+  if (pxPerHour >= 140) return 10;
+
+  return 15;
+}
 
 /* Pixels of movement before a press becomes a drag rather than a tap. Without
    it, marking with the highlighter would move appointments by a minute or two
@@ -248,6 +273,23 @@ function lines(height: number): {
   };
 }
 
+/** "6h 15m", "45m" — a length, for the label a block shows while it is resized. */
+function formatMinutes(minutes: number): string {
+  if (minutes <= 0) return "0m";
+
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+
+  if (hours === 0) return `${rest}m`;
+
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/** An instant, moved. Used to say where a block is landing, not where it was. */
+function shifted(iso: string, minutes: number): string {
+  return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
+}
+
 /** "45 minutes later", "2 hours earlier", "1 day later" — for the undo strip. */
 function describeShift(minutes: number): string {
   const when = minutes < 0 ? "earlier" : "later";
@@ -287,7 +329,7 @@ export function DayGrid({
   const gridRef = useRef<HTMLDivElement>(null);
 
   const [brush, setBrush] = useState<StatusKey | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(2);
   const [showWash, setShowWash] = useState(false);
   const [showEnded, setShowEnded] = useState(false);
   const [undoable, setUndoable] = useState<StatusChange[] | null>(null);
@@ -333,6 +375,67 @@ export function DayGrid({
 
   /** A length change sent and not yet returned, in minutes. */
   const [resized, setResized] = useState<Record<string, number>>({});
+
+  /*
+   * PINCH TO ZOOM. Two fingers on the pane change how many pixels an hour is
+   * worth, which — because `snapFor()` follows the zoom — is also what makes
+   * five-minute placement possible. Held in a ref rather than state: it
+   * changes on every frame of a pinch and none of those frames should cost a
+   * render of forty blocks. Only the zoom STEP it settles on does.
+   */
+  const pinch = useRef<{ from: number; startedAt: number } | null>(null);
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+
+  function paneDown(event: React.PointerEvent) {
+    if (event.pointerType !== "touch") return;
+
+    touches.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  function paneMove(event: React.PointerEvent) {
+    if (event.pointerType !== "touch") return;
+    if (!touches.current.has(event.pointerId)) return;
+
+    touches.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    const points = [...touches.current.values()];
+    if (points.length !== 2) return;
+
+    const spread = Math.hypot(
+      points[0]!.x - points[1]!.x,
+      points[0]!.y - points[1]!.y,
+    );
+
+    if (!pinch.current) {
+      pinch.current = { from: spread, startedAt: zoom };
+      return;
+    }
+
+    /* One zoom step per 40% of spread. Coarse on purpose — the steps are the
+       vocabulary, and a continuous scale would land between them. */
+    const steps = Math.round(
+      (spread / pinch.current.from - 1) / 0.4,
+    );
+
+    const next = Math.min(
+      Math.max(pinch.current.startedAt + steps, 0),
+      ZOOMS.length - 1,
+    );
+
+    if (next !== zoom) setZoom(next);
+  }
+
+  function paneUp(event: React.PointerEvent) {
+    touches.current.delete(event.pointerId);
+
+    if (touches.current.size < 2) pinch.current = null;
+  }
 
   /** A move that has been sent but not yet come back, so the block stays put. */
   const [moved, setMoved] = useState<Record<string, number>>({});
@@ -536,6 +639,7 @@ export function DayGrid({
     }
 
     const minutes = (dy / pxPerHour) * 60;
+    const snap = snapFor(pxPerHour);
 
     /*
      * Sideways only counts where a column is a date — then crossing one is a
@@ -577,7 +681,7 @@ export function DayGrid({
       ...drag,
       moved: true,
       across,
-      shift: Math.round(minutes / SNAP) * SNAP + days * 24 * 60,
+      shift: Math.round(minutes / snap) * snap + days * 24 * 60,
     });
   }
 
@@ -904,7 +1008,13 @@ export function DayGrid({
          * pane with its own scroll is what lets the column headings and the
          * clock stay put while you move through the day.
          */
-        <div className="max-h-[68vh] overflow-auto border border-line">
+        <div
+          className="max-h-[68vh] touch-pan-x touch-pan-y overflow-auto border border-line"
+          onPointerDown={paneDown}
+          onPointerMove={paneMove}
+          onPointerUp={paneUp}
+          onPointerCancel={paneUp}
+        >
           {/*
             TWO GRIDS, NOT ONE, AND THAT IS THE WHOLE FIX FOR STICKY HEADINGS.
 
@@ -977,6 +1087,53 @@ export function DayGrid({
                   />
                 ))}
 
+                {/*
+                  THE CLEANUP GAP, DRAWN. blocked_until is ends_at plus the
+                  service's buffer, and it is what the exclusion constraint
+                  actually reserves — so two blocks that merely LOOK adjacent
+                  are already overlapping as far as the database is concerned,
+                  and a refusal reads as arbitrary until the gap is visible.
+
+                  Behind the blocks and not interactive: it is a consequence of
+                  the service, changed on the services screen and nowhere else.
+                */}
+                {(laid.get(head.id) ?? []).map((block) => {
+                  const row = block.row;
+                  const tail =
+                    (Math.round(
+                      (new Date(row.blocked_until).getTime() -
+                        new Date(row.ends_at).getTime()) /
+                        60_000,
+                    ) /
+                      60) *
+                    pxPerHour;
+
+                  if (tail < 2) return null;
+
+                  const width = 100 / block.lanes;
+                  const shownOffset =
+                    ((moved[row.visit_id] ?? 0) + (resized[row.id] ?? 0) === 0
+                      ? 0
+                      : ((moved[row.visit_id] ?? 0) / 60) * pxPerHour);
+
+                  return (
+                    <div
+                      key={`${row.id}-buffer`}
+                      aria-hidden
+                      title="Cleanup gap — the station is not free yet"
+                      className="absolute"
+                      style={{
+                        top: block.top + block.height + shownOffset,
+                        height: tail,
+                        left: `calc(${block.lane * width}% + 2px)`,
+                        width: `calc(${width}% - 4px)`,
+                        background:
+                          "repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 7px)",
+                      }}
+                    />
+                  );
+                })}
+
                 {(laid.get(head.id) ?? []).map((block) => {
                   const row = block.row;
                   const status = statusMeta(overrides[row.id] ?? row.status);
@@ -1009,9 +1166,11 @@ export function DayGrid({
 
                   /* A resize pins the top and moves the bottom, so the height
                      changes and the offset does not. */
-                  const stretch =
-                    ((resizingThis ? drag!.shift : (resized[row.id] ?? 0)) / 60) *
-                    pxPerHour;
+                  const stretchMinutes = resizingThis
+                    ? drag!.shift
+                    : (resized[row.id] ?? 0);
+
+                  const stretch = (stretchMinutes / 60) * pxPerHour;
 
                   const offset = resizingThis
                     ? (moved[row.visit_id] ?? 0) / 60 * pxPerHour
@@ -1111,10 +1270,41 @@ export function DayGrid({
                         </p>
                       )}
 
+                      {/*
+                        THE TIME A BLOCK SHOWS IS WHERE ITS TOP IS, not what
+                        the database currently stores. During a drag those
+                        differ, and the stored one is the wrong answer: the
+                        question somebody is asking mid-drag is "what time
+                        would this be", and reading the old value off a block
+                        that has visibly moved is how a booking is dropped in
+                        the wrong place.
+
+                        While resizing, the same idea runs on the length
+                        instead — the top is pinned and the duration changes.
+                      */}
                       {show.time && (
                         <p className="truncate tabular-nums text-ink-muted">
-                          {salonTime(row.starts_at, timezone)}
-                          <span className="ml-1">· {status.label}</span>
+                          {salonTime(
+                            offsetMinutes === 0
+                              ? row.starts_at
+                              : shifted(row.starts_at, offsetMinutes),
+                            timezone,
+                          )}
+                          <span className="ml-1">
+                            ·{" "}
+                            {stretchMinutes !== 0
+                              ? formatMinutes(
+                                  Math.max(
+                                    Math.round(
+                                      (new Date(row.ends_at).getTime() -
+                                        new Date(row.starts_at).getTime()) /
+                                        60_000,
+                                    ) + stretchMinutes,
+                                    0,
+                                  ),
+                                )
+                              : status.label}
+                          </span>
                         </p>
                       )}
                     </button>
