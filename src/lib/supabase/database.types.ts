@@ -1443,6 +1443,10 @@ export type Database = {
         }
         Returns: string
       }
+      move_visit: {
+        Args: { p_starts_at: string; p_visit_id: string }
+        Returns: undefined
+      }
       normalize_phone: {
         Args: { p_dial_code?: string; p_phone: string }
         Returns: string

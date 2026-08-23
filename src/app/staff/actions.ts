@@ -139,3 +139,91 @@ export async function softDeleteAppointment(
 
   return { ok: true, changed: 1 };
 }
+
+export type MoveResult =
+  | { ok: true; shiftedMinutes: number }
+  | { ok: false; message: string };
+
+/**
+ * Move a whole visit by an interval.
+ *
+ * Takes a SHIFT rather than a new start time, because the caller is a block on
+ * a grid and knows only how far it was dragged. The visit's real start is
+ * whatever its earliest row says, and the browser may not be looking at that
+ * row — the week view shows one person, so a braid's founding can be on screen
+ * while the assistant's finishing is not. Working the new start out from what
+ * happens to be rendered would move a visit to the wrong place, and only for
+ * the visits that span two people.
+ *
+ * So the anchor is read here. Anyone who may call this holds
+ * `appointment.manage`, and every role that holds it also holds
+ * `appointment.view_all` — Owner, Manager and Receptionist — so the earliest
+ * row is genuinely visible to the query below rather than merely to the
+ * database. If a role is ever created with manage but not view_all, this
+ * becomes wrong, which is why the assumption is written down rather than
+ * assumed.
+ *
+ * The move itself is `move_visit()` in Postgres, migration 039. It shifts
+ * every row by the same interval so a founding and its finishing stay
+ * together, and it defers the double-booking constraint so a chained visit is
+ * checked once it is a whole visit again.
+ */
+export async function moveVisit(
+  visitId: string,
+  shiftMinutes: number,
+): Promise<MoveResult> {
+  await requirePermission("appointment.manage");
+
+  if (shiftMinutes === 0) return { ok: true, shiftedMinutes: 0 };
+
+  const supabase = await createSupabaseServerClient();
+
+  const { data: anchor, error: anchorError } = await supabase
+    .from("appointments")
+    .select("starts_at")
+    .eq("visit_id", visitId)
+    .is("deleted_at", null)
+    .order("starts_at")
+    .limit(1)
+    .maybeSingle();
+
+  if (anchorError || !anchor) {
+    return { ok: false, message: "That visit could not be found. Reload." };
+  }
+
+  const startsAt = new Date(
+    new Date(anchor.starts_at).getTime() + shiftMinutes * 60_000,
+  ).toISOString();
+
+  const { error } = await supabase.rpc("move_visit", {
+    p_visit_id: visitId,
+    p_starts_at: startsAt,
+  });
+
+  if (error) {
+    /*
+     * A clash is the expected refusal, not a fault — somebody is already in
+     * that slot. Because the constraint is deferred inside move_visit(), it
+     * surfaces at commit rather than at the statement, but with the same
+     * SQLSTATE and the same meaning.
+     */
+    if (error.code === "23P01") {
+      return {
+        ok: false,
+        message: "Somebody else is already booked then. Nothing was moved.",
+      };
+    }
+
+    console.error("moveVisit failed", error);
+
+    return {
+      ok: false,
+      message: error.message || "That could not be moved. Reload and try again.",
+    };
+  }
+
+  revalidatePath("/staff/day");
+  revalidatePath("/staff/week");
+
+  return { ok: true, shiftedMinutes: shiftMinutes };
+}

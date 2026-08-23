@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { STATUSES, statusMeta, type StatusKey } from "@/lib/appointments/status";
 import { salonMinutes, salonTime } from "@/lib/site/datetime";
 
-import { applyStatuses, type StatusChange } from "./actions";
+import { applyStatuses, moveVisit, type StatusChange } from "./actions";
 
 /**
  * The day, as a grid.
@@ -63,6 +63,15 @@ type Props = {
   columns: { id: string; label: string }[];
   timezone: string;
   canManage: boolean;
+  /*
+   * What a column IS, which the grid needs for one reason only: dragging
+   * sideways. Where columns are dates, crossing one is a change of day and so
+   * is just a bigger shift in time — the same move. Where they are people,
+   * crossing one would be a REASSIGNMENT, and move_visit() cannot do that: it
+   * shifts times and never touches employee_id. So a sideways drag is ignored
+   * on the day view rather than silently doing something else.
+   */
+  columnKind: "employee" | "date";
 };
 
 /* The salon's day, wider than its opening hours so an overrun is visible
@@ -71,6 +80,17 @@ const DAY_START = 7 * 60;
 const DAY_END = 22 * 60;
 
 const ZOOMS = [40, 60, 90, 130];
+
+/* Dragged times land on a quarter hour. Free movement to the minute produces
+   10:07 starts that nobody would say out loud, and the salon's own step is
+   thirty — a quarter is fine enough to squeeze somebody in and coarse enough
+   to be aimed at on a phone. */
+const SNAP = 15;
+
+/* Pixels of movement before a press becomes a drag rather than a tap. Without
+   it, marking with the highlighter would move appointments by a minute or two
+   whenever a finger wobbled. */
+const DRAG_THRESHOLD = 4;
 
 /* One shared empty object, so "nothing is pending" is the same reference on
    every render rather than a fresh one that rebuilds the day below it. */
@@ -187,7 +207,40 @@ function lines(height: number): {
   };
 }
 
-export function DayGrid({ rows, columns, timezone, canManage }: Props) {
+/** "45 minutes later", "2 hours earlier", "1 day later" — for the undo strip. */
+function describeShift(minutes: number): string {
+  const when = minutes < 0 ? "earlier" : "later";
+  const size = Math.abs(minutes);
+
+  if (size >= 1440 && size % 1440 === 0) {
+    const days = size / 1440;
+
+    return `${days} ${days === 1 ? "day" : "days"} ${when}`;
+  }
+
+  if (size >= 60) {
+    const hours = Math.floor(size / 60);
+    const rest = size % 60;
+
+    return rest === 0
+      ? `${hours} ${hours === 1 ? "hour" : "hours"} ${when}`
+      : `${hours}h ${rest}m ${when}`;
+  }
+
+  return `${size} minutes ${when}`;
+}
+
+export function DayGrid({
+  rows,
+  columns,
+  timezone,
+  canManage,
+  columnKind,
+}: Props) {
+  /* Measured rather than assumed: columns share the available width, so how
+     wide one is depends on the screen and on how many stylists work here. */
+  const gridRef = useRef<HTMLDivElement>(null);
+
   const [brush, setBrush] = useState<StatusKey | null>(null);
   const [zoom, setZoom] = useState(1);
   const [showWash, setShowWash] = useState(false);
@@ -212,6 +265,22 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
     () => (pendingFor?.key === rowsKey ? pendingFor.map : NOTHING_PENDING),
     [pendingFor, rowsKey],
   );
+
+  /*
+   * A drag in progress. `from` is where the pointer went down, `shift` is how
+   * far the visit would move if it were let go now — in minutes, already
+   * snapped. Held as one object so a render can never see half a drag.
+   */
+  const [drag, setDrag] = useState<{
+    visitId: string;
+    fromX: number;
+    fromY: number;
+    shift: number;
+    moved: boolean;
+  } | null>(null);
+
+  /** A move that has been sent but not yet come back, so the block stays put. */
+  const [moved, setMoved] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!undoable) return;
@@ -319,6 +388,139 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
 
     startSaving(async () => {
       const result = await applyStatuses([{ id: row.id, status: brush }]);
+      if (!result.ok) setError(result.message);
+    });
+  }
+
+  /*
+   * DRAGGING.
+   *
+   * Pointer events rather than mouse events, so a finger on the salon's tablet
+   * and a mouse on the desk take the same path. Capture means the block keeps
+   * receiving moves even when the pointer leaves it, which it does constantly
+   * — the block is a hundred pixels wide and a drag crosses the whole day.
+   *
+   * The whole visit moves, so a drag on a founding drags its finishing too.
+   * That is decided in Postgres by move_visit(); here it only has to be shown,
+   * which is why the preview offsets every block sharing the visit id.
+   */
+  function dragStart(event: React.PointerEvent, row: Row) {
+    // The highlighter owns the tap when a status is selected. One gesture, one
+    // meaning — a press that both marks and moves is a press nobody trusts.
+    if (brush || !canManage) return;
+
+    (event.target as Element).setPointerCapture?.(event.pointerId);
+
+    setDrag({
+      visitId: row.visit_id,
+      fromX: event.clientX,
+      fromY: event.clientY,
+      shift: 0,
+      moved: false,
+    });
+  }
+
+  function dragMove(event: React.PointerEvent) {
+    if (!drag) return;
+
+    const dx = event.clientX - drag.fromX;
+    const dy = event.clientY - drag.fromY;
+
+    if (
+      !drag.moved &&
+      Math.abs(dx) < DRAG_THRESHOLD &&
+      Math.abs(dy) < DRAG_THRESHOLD
+    ) {
+      return;
+    }
+
+    const minutes = (dy / pxPerHour) * 60;
+
+    /*
+     * Sideways only counts where a column is a date — then crossing one is a
+     * change of day, which is the same move a day further on. Where columns
+     * are people it is ignored: move_visit() shifts times and never touches
+     * employee_id, so honouring the gesture would silently do something other
+     * than what it looks like.
+     */
+    let days = 0;
+
+    if (columnKind === "date" && gridRef.current) {
+      const columnWidth =
+        (gridRef.current.clientWidth - 52) / Math.max(columns.length, 1);
+
+      if (columnWidth > 0) days = Math.round(dx / columnWidth);
+    }
+
+    setDrag({
+      ...drag,
+      moved: true,
+      shift: Math.round(minutes / SNAP) * SNAP + days * 24 * 60,
+    });
+  }
+
+  function dragEnd() {
+    if (!drag) return;
+
+    const { visitId, shift, moved: didMove } = drag;
+    setDrag(null);
+
+    if (!didMove || shift === 0) return;
+
+    setError(null);
+    setMoved((current) => ({ ...current, [visitId]: shift }));
+
+    startSaving(async () => {
+      const result = await moveVisit(visitId, shift);
+
+      if (!result.ok) {
+        // Put it back where it was — the database refused, so the block must
+        // not sit somewhere it is not.
+        setMoved((current) => {
+          const next = { ...current };
+          delete next[visitId];
+
+          return next;
+        });
+
+        setError(result.message);
+        return;
+      }
+
+      /* Undo a move by moving it back. Same operation, opposite sign, so
+         there is no separate "restore" path to get wrong. */
+      setUndoMove({ visitId, shift: -shift });
+    });
+  }
+
+  /** A move that can be put back, offered for a few seconds like a marking. */
+  const [undoMove, setUndoMove] = useState<{
+    visitId: string;
+    shift: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!undoMove) return;
+
+    const timer = setTimeout(() => setUndoMove(null), 8000);
+
+    return () => clearTimeout(timer);
+  }, [undoMove]);
+
+  function undoTheMove() {
+    if (!undoMove) return;
+
+    const { visitId, shift } = undoMove;
+    setUndoMove(null);
+    setError(null);
+
+    setMoved((current) => ({
+      ...current,
+      [visitId]: (current[visitId] ?? 0) + shift,
+    }));
+
+    startSaving(async () => {
+      const result = await moveVisit(visitId, shift);
       if (!result.ok) setError(result.message);
     });
   }
@@ -445,6 +647,7 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
          */
         <div className="max-h-[68vh] overflow-auto border border-line">
           <div
+            ref={gridRef}
             className="grid"
             style={{
               /*
@@ -512,21 +715,47 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
                   const width = 100 / block.lanes;
                   const show = lines(block.height);
 
+                  /*
+                   * How far this block is from where the database thinks it
+                   * is: a drag in progress, plus any move already sent and not
+                   * yet confirmed. Both are in minutes, so both become pixels
+                   * the same way.
+                   */
+                  const offsetMinutes =
+                    (drag?.visitId === row.visit_id ? drag.shift : 0) +
+                    (moved[row.visit_id] ?? 0);
+
+                  const offset = (offsetMinutes / 60) * pxPerHour;
+                  const dragging = drag?.visitId === row.visit_id && drag.moved;
+
                   return (
                     <button
                       key={row.id}
                       type="button"
                       onClick={() => mark(row)}
-                      disabled={!brush || !canManage}
+                      onPointerDown={(event) => dragStart(event, row)}
+                      onPointerMove={dragMove}
+                      onPointerUp={dragEnd}
+                      onPointerCancel={dragEnd}
+                      disabled={!canManage}
                       title={`${row.customer?.full_name ?? ""} · ${label(row)} · ${salonTime(row.starts_at, timezone)}–${salonTime(row.ends_at, timezone)} · ${status.label}`}
                       aria-label={`${row.customer?.full_name ?? "Appointment"}, ${label(row)}, ${salonTime(row.starts_at, timezone)}, ${status.label}`}
                       className={`absolute overflow-hidden rounded-sm border-l-[3px] px-1.5 py-0.5 text-left text-[0.6875rem] leading-[1.35] ${
-                        brush && canManage
-                          ? "cursor-pointer hover:brightness-95"
-                          : "cursor-default"
-                      } ${ended ? "opacity-50" : ""}`}
+                        !canManage
+                          ? "cursor-default"
+                          : brush
+                            ? "cursor-pointer hover:brightness-95"
+                            : "cursor-grab active:cursor-grabbing"
+                      } ${ended ? "opacity-50" : ""} ${
+                        dragging ? "z-10 shadow-lg ring-1 ring-ink" : ""
+                      }`}
                       style={{
-                        top: block.top,
+                        /* `touch-action: none` is what stops a drag on the
+                           salon's tablet scrolling the page instead of moving
+                           the appointment. Without it the gesture belongs to
+                           the browser and never reaches this component. */
+                        touchAction: brush || !canManage ? undefined : "none",
+                        top: block.top + offset,
                         height: block.height,
                         left: `calc(${block.lane * width}% + 2px)`,
                         width: `calc(${width}% - 4px)`,
@@ -587,12 +816,32 @@ export function DayGrid({ rows, columns, timezone, canManage }: Props) {
       )}
 
       {/* ---------- undo, and anything that went wrong ---------- */}
-      {(undoable || error) && (
-        <div className="sticky bottom-4 mx-auto flex items-center gap-4 border border-ink bg-surface px-4 py-2.5 text-sm shadow-lg">
+      {/*
+        One strip for both kinds of change. A marking and a move are undone the
+        same way from the reader's point of view, and two strips racing each
+        other for the same corner would be worse than either.
+      */}
+      {(undoable || undoMove || error) && (
+        <div className="sticky bottom-4 mx-auto flex w-fit items-center gap-4 border border-ink bg-surface px-4 py-2.5 text-sm shadow-lg">
           {error ? (
             <span role="alert" className="text-brand">
               {error}
             </span>
+          ) : undoMove ? (
+            <>
+              <span>
+                {saving
+                  ? "Moving…"
+                  : `Moved ${describeShift(-undoMove.shift)}`}
+              </span>
+              <button
+                type="button"
+                onClick={undoTheMove}
+                className="underline underline-offset-4 transition-colors hover:text-brand"
+              >
+                Undo
+              </button>
+            </>
           ) : (
             <>
               <span>{saving ? "Saving…" : "Marked"}</span>
