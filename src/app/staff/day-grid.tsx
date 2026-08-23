@@ -5,7 +5,13 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { STATUSES, statusMeta, type StatusKey } from "@/lib/appointments/status";
 import { salonMinutes, salonTime } from "@/lib/site/datetime";
 
-import { applyStatuses, moveVisit, type StatusChange } from "./actions";
+import {
+  applyStatuses,
+  moveVisit,
+  reassignAppointment,
+  resizeAppointment,
+  type StatusChange,
+} from "./actions";
 import { setPlannedMove } from "./plan-actions";
 
 /**
@@ -291,11 +297,21 @@ export function DayGrid({
    */
   const [drag, setDrag] = useState<{
     visitId: string;
+    /** The single row being dragged — reassigning and resizing act on it. */
+    rowId: string;
     fromX: number;
     fromY: number;
+    fromColumn: string;
     shift: number;
+    /** Columns crossed. Only meaningful where a column is a person. */
+    across: number;
     moved: boolean;
+    /** A pull on the bottom edge changes the length instead of the time. */
+    resizing: boolean;
   } | null>(null);
+
+  /** A length change sent and not yet returned, in minutes. */
+  const [resized, setResized] = useState<Record<string, number>>({});
 
   /** A move that has been sent but not yet come back, so the block stays put. */
   const [moved, setMoved] = useState<Record<string, number>>({});
@@ -451,19 +467,28 @@ export function DayGrid({
    * That is decided in Postgres by move_visit(); here it only has to be shown,
    * which is why the preview offsets every block sharing the visit id.
    */
-  function dragStart(event: React.PointerEvent, row: Row) {
+  function dragStart(
+    event: React.PointerEvent,
+    row: Row,
+    resizing = false,
+  ) {
     // The highlighter owns the tap when a status is selected. One gesture, one
     // meaning — a press that both marks and moves is a press nobody trusts.
     if (brush || !canManage) return;
 
+    event.stopPropagation();
     (event.target as Element).setPointerCapture?.(event.pointerId);
 
     setDrag({
       visitId: row.visit_id,
+      rowId: row.id,
       fromX: event.clientX,
       fromY: event.clientY,
+      fromColumn: row.column_id,
       shift: 0,
+      across: 0,
       moved: false,
+      resizing,
     });
   }
 
@@ -490,18 +515,39 @@ export function DayGrid({
      * employee_id, so honouring the gesture would silently do something other
      * than what it looks like.
      */
+    /*
+     * Sideways means two different things, and the column decides which.
+     *
+     * Where columns are DATES, crossing one is a change of day — the same move
+     * a day further on, so it folds into the shift.
+     *
+     * Where they are PEOPLE, crossing one is a reassignment: this piece of
+     * work goes to somebody else. That is a different operation on a different
+     * grain — one appointment rather than the whole visit — so it is counted
+     * separately and settled at the drop.
+     *
+     * A resize ignores sideways entirely. Pulling an edge changes a length,
+     * and a length has no column.
+     */
     let days = 0;
+    let across = 0;
 
-    if (columnKind === "date" && gridRef.current) {
+    if (!drag.resizing && gridRef.current) {
       const columnWidth =
         (gridRef.current.clientWidth - 52) / Math.max(columns.length, 1);
 
-      if (columnWidth > 0) days = Math.round(dx / columnWidth);
+      if (columnWidth > 0) {
+        const crossed = Math.round(dx / columnWidth);
+
+        if (columnKind === "date") days = crossed;
+        else across = crossed;
+      }
     }
 
     setDrag({
       ...drag,
       moved: true,
+      across,
       shift: Math.round(minutes / SNAP) * SNAP + days * 24 * 60,
     });
   }
@@ -509,10 +555,83 @@ export function DayGrid({
   function dragEnd() {
     if (!drag) return;
 
-    const { visitId, shift, moved: didMove } = drag;
+    const { visitId, rowId, shift, across, moved: didMove, resizing } = drag;
     setDrag(null);
 
-    if (!didMove || shift === 0) return;
+    if (!didMove) return;
+
+    const row = rows.find((r) => r.id === rowId);
+
+    /* ---- pulling the bottom edge: a new length ---- */
+    if (resizing) {
+      if (shift === 0 || !row) return;
+
+      setError(null);
+      setResized((current) => ({ ...current, [rowId]: shift }));
+
+      const endsAt = new Date(
+        new Date(row.ends_at).getTime() + shift * 60_000,
+      ).toISOString();
+
+      startSaving(async () => {
+        const result = await resizeAppointment(rowId, endsAt);
+
+        if (!result.ok) {
+          setResized((current) => {
+            const next = { ...current };
+            delete next[rowId];
+
+            return next;
+          });
+
+          setError(result.message);
+        }
+      });
+
+      return;
+    }
+
+    /* ---- dropped in somebody else's column: a reassignment ---- */
+    if (across !== 0 && columnKind === "employee" && row) {
+      const fromIndex = columns.findIndex((c) => c.id === drag.fromColumn);
+      const target = columns[Math.min(
+        Math.max(fromIndex + across, 0),
+        columns.length - 1,
+      )];
+
+      if (!target || target.id === drag.fromColumn) return;
+
+      /*
+       * The shared assistants column is not a person, so nothing can be
+       * assigned TO it — create_appointment() chooses which assistant at write
+       * time, and picking one by hand here would be inventing an answer the
+       * scheduler is better placed to give.
+       */
+      if (target.id.startsWith("__")) {
+        setError("Assistants are assigned automatically — drop it on a stylist.");
+        return;
+      }
+
+      setError(null);
+
+      const startsAt = new Date(
+        new Date(row.starts_at).getTime() + shift * 60_000,
+      ).toISOString();
+
+      startSaving(async () => {
+        const result = await reassignAppointment({
+          appointmentId: rowId,
+          employeeId: target.id,
+          startsAt,
+        });
+
+        if (!result.ok) setError(result.message);
+      });
+
+      return;
+    }
+
+    if (shift === 0) return;
 
     setError(null);
     setMoved((current) => ({ ...current, [visitId]: shift }));
@@ -825,8 +944,28 @@ export function DayGrid({
                     (plannedOffset[row.visit_id] !== undefined ||
                       moved[row.visit_id] !== undefined);
 
-                  const offset = (offsetMinutes / 60) * pxPerHour;
-                  const dragging = drag?.visitId === row.visit_id && drag.moved;
+                  const isThisRow = drag?.rowId === row.id && drag.moved;
+                  const resizingThis = isThisRow && drag!.resizing;
+
+                  /* A resize pins the top and moves the bottom, so the height
+                     changes and the offset does not. */
+                  const stretch =
+                    ((resizingThis ? drag!.shift : (resized[row.id] ?? 0)) / 60) *
+                    pxPerHour;
+
+                  const offset = resizingThis
+                    ? (moved[row.visit_id] ?? 0) / 60 * pxPerHour
+                    : (offsetMinutes / 60) * pxPerHour;
+
+                  const dragging =
+                    (drag?.visitId === row.visit_id && drag.moved) || false;
+
+                  /* Sideways is shown by sliding the block, so it is visibly
+                     heading for another column before it is let go. */
+                  const sideways =
+                    isThisRow && !drag!.resizing && drag!.across !== 0
+                      ? drag!.across * 100
+                      : 0;
 
                   return (
                     <button
@@ -863,7 +1002,10 @@ export function DayGrid({
                            the browser and never reaches this component. */
                         touchAction: brush || !canManage ? undefined : "none",
                         top: block.top + offset,
-                        height: block.height,
+                        transform: sideways
+                          ? `translateX(${sideways}%)`
+                          : undefined,
+                        height: Math.max(block.height + stretch, 14),
                         left: `calc(${block.lane * width}% + 2px)`,
                         width: `calc(${width}% - 4px)`,
                         /* The status colour carries the block: a tint for the
@@ -916,6 +1058,55 @@ export function DayGrid({
                     </button>
                   );
                 })}
+
+                {/*
+                  THE RESIZE HANDLES, drawn after the blocks so they sit above
+                  them, and as siblings rather than children — the block is a
+                  <button> and a button inside a button is invalid HTML that
+                  browsers repair by moving it out, which breaks the layout in
+                  a way that is hard to see and harder to explain.
+
+                  Six pixels of grab area on the bottom edge. Only on blocks
+                  tall enough to have an edge worth grabbing, and never while
+                  the highlighter owns the tap.
+                */}
+                {canManage &&
+                  !brush &&
+                  (laid.get(head.id) ?? []).map((block) => {
+                    const row = block.row;
+                    const isThisRow = drag?.rowId === row.id && drag.moved;
+                    const stretch =
+                      ((isThisRow && drag!.resizing
+                        ? drag!.shift
+                        : (resized[row.id] ?? 0)) /
+                        60) *
+                      pxPerHour;
+
+                    const height = Math.max(block.height + stretch, 14);
+                    if (height < 26) return null;
+
+                    const width = 100 / block.lanes;
+
+                    return (
+                      <div
+                        key={`${row.id}-handle`}
+                        role="presentation"
+                        onPointerDown={(event) => dragStart(event, row, true)}
+                        onPointerMove={dragMove}
+                        onPointerUp={dragEnd}
+                        onPointerCancel={dragEnd}
+                        title="Drag to change how long it takes"
+                        className="absolute z-10 cursor-ns-resize"
+                        style={{
+                          touchAction: "none",
+                          top: block.top + height - 6,
+                          height: 8,
+                          left: `calc(${block.lane * width}% + 2px)`,
+                          width: `calc(${width}% - 4px)`,
+                        }}
+                      />
+                    );
+                  })}
               </div>
             ))}
           </div>

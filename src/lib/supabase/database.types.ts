@@ -1551,8 +1551,20 @@ export type Database = {
         Args: { p_dial_code?: string; p_phone: string }
         Returns: string
       }
+      reassign_appointment: {
+        Args: {
+          p_appointment_id: string
+          p_employee_id: string
+          p_starts_at: string
+        }
+        Returns: undefined
+      }
       release_holds: {
         Args: { p_party_index?: number; p_session_token?: string }
+        Returns: undefined
+      }
+      resize_appointment: {
+        Args: { p_appointment_id: string; p_ends_at: string }
         Returns: undefined
       }
       round_up_to_minutes: {

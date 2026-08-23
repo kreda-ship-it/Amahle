@@ -227,3 +227,89 @@ export async function moveVisit(
 
   return { ok: true, shiftedMinutes: shiftMinutes };
 }
+
+/**
+ * Give one appointment to somebody else, at the time it was dropped.
+ *
+ * PER-APPOINTMENT, unlike `moveVisit`. "Move Sara to three" is a fact about a
+ * whole visit; "give Sara's braids to Maki" is a fact about one piece of work,
+ * and the assistant finishing them is not reassigned by it.
+ *
+ * The database refuses somebody who does not perform that service in that
+ * capacity — a lead row needs a lead, a finishing row needs an assistant — so
+ * a knotless braid cannot land on somebody who has never braided.
+ */
+export async function reassignAppointment(input: {
+  appointmentId: string;
+  employeeId: string;
+  startsAt: string;
+}): Promise<MoveResult> {
+  await requirePermission("appointment.manage");
+
+  const supabase = await createSupabaseServerClient();
+
+  const { error } = await supabase.rpc("reassign_appointment", {
+    p_appointment_id: input.appointmentId,
+    p_employee_id: input.employeeId,
+    p_starts_at: input.startsAt,
+  });
+
+  if (error) {
+    if (error.code === "23P01") {
+      return {
+        ok: false,
+        message: "They are already booked then. Nothing was moved.",
+      };
+    }
+
+    return {
+      ok: false,
+      message: error.message || "That could not be reassigned.",
+    };
+  }
+
+  revalidatePath("/staff/day");
+  revalidatePath("/staff/week");
+
+  return { ok: true, shiftedMinutes: 0 };
+}
+
+/**
+ * Change how long one appointment takes.
+ *
+ * Whatever follows it in the same visit shifts with it, so a founding and its
+ * finishing stay joined — stretch a founding and leave the finishing alone and
+ * an assistant is booked to work on hair the stylist has not released yet.
+ */
+export async function resizeAppointment(
+  appointmentId: string,
+  endsAt: string,
+): Promise<MoveResult> {
+  await requirePermission("appointment.manage");
+
+  const supabase = await createSupabaseServerClient();
+
+  const { error } = await supabase.rpc("resize_appointment", {
+    p_appointment_id: appointmentId,
+    p_ends_at: endsAt,
+  });
+
+  if (error) {
+    if (error.code === "23P01") {
+      return {
+        ok: false,
+        message: "That would run into the next appointment.",
+      };
+    }
+
+    return {
+      ok: false,
+      message: error.message || "That length could not be set.",
+    };
+  }
+
+  revalidatePath("/staff/day");
+  revalidatePath("/staff/week");
+
+  return { ok: true, shiftedMinutes: 0 };
+}
