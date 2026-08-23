@@ -1,0 +1,22 @@
+-- ============================================================
+-- 043 — lead_minutes becomes editable
+--
+-- Migration 034 added services.lead_minutes — how much of a
+-- service the LEAD stylist is actually needed for, which is the
+-- number that turned three bookable starts into nine — and never
+-- granted it. Every other column on the table has had an insert
+-- and update grant since migration 007.
+--
+-- So it can be read by the application and written only by
+-- somebody with a SQL editor open. That is invisible until
+-- somebody builds the screen for it, which is what found it.
+--
+-- It matters more than most: the whole tree's lead times are
+-- placeholders shaped like real numbers, and Selam's real figures
+-- are the first thing that will want changing. A column-level
+-- grant is not a permission — services_update still requires
+-- service.manage — it only decides which columns that policy is
+-- allowed to touch.
+-- ============================================================
+grant insert (lead_minutes), update (lead_minutes)
+  on public.services to authenticated;

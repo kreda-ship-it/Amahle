@@ -35,7 +35,7 @@ const ITEMS: NavItem[] = [
   { label: "You",       href: "/staff/me",        built: true,  permission: null },
   { label: "Customers", href: "/staff/customers", built: false, permission: "customer.view" },
   { label: "Team",      href: "/staff/team",      built: false, permission: "employee.record.manage" },
-  { label: "Services",  href: "/staff/services",  built: false, permission: "service.manage" },
+  { label: "Services",  href: "/staff/services",  built: true,  permission: "service.manage" },
   { label: "Settings",  href: "/staff/settings",  built: false, permission: "organization.edit" },
 ];
 
