@@ -18,6 +18,97 @@ Newest entry at the top.
 
 ---
 
+## 2026-08-22 (later) — The staff side, end to end
+
+**Built:** Phase 5 was eight unexplained checkboxes. It is now scoped in
+ROADMAP with the reasoning behind every argued decision, and six of its nine
+steps are built: the shell, manual entry in four stages, statuses and the
+highlighter, who does what, the week, and the day-before call round. Nine
+commits.
+
+**The booking engine stopped being unreachable.** Yesterday's note said it was
+"complete and unreachable" — nothing in TypeScript could call `get_visit_slots`,
+`visit_totals` or the question tree, and `getBookableServices()` filtered on
+`is_bookable_online`, which excludes precisely the braiding services a phone
+booking exists for. `/staff/book` is the first screen that reaches any of it:
+the tree, priced answers, several services in one visit, and a time the
+receptionist may set herself.
+
+**Reading `create_appointment()` line by line changed the design twice.** Staff
+bypass is only half true — `v_source = 'online'` gates the past-time check, the
+online-bookable check and the lead's availability, but NOT the finishing chain,
+which always needs a genuinely free assistant. The receptionist can overrule a
+rota; she cannot conjure a colleague. And the caller supplies who *leads* and
+nothing else, so the form must not offer to pick finishers.
+
+**Two features turned out to need no migration at all.** The status highlighter:
+`appointments_update` already permits `appointment.manage` and the audit trigger
+already logs old and new because it is written by trigger rather than by
+application code. A `security definer` function would have been a second write
+path to a table that has a working one. And moving an appointment: the fill
+trigger already carries `ends_at` and `blocked_until` across when `starts_at`
+moves.
+
+**The day became a grid** — people across, time down. A card list cannot answer
+the question the desk asks, which is not "what is booked" but "where is the
+gap"; a gap is a shape and only a grid has shapes. Who gets a column is derived
+from `employee_services.role`, not stored — a stored `is_stylist` flag would be
+a second version of a truth the booking path already reads. Assistants share
+one column and are allowed to look double-booked, because nobody is ever booked
+*with* a named assistant.
+
+Generalising that grid for the week view produced the session's one genuinely
+transferable lesson: the obvious fix — pass a function saying which column a
+row belongs to — **cannot cross the server-to-client boundary**, because props
+must be serialisable. So the server tags each row with `column_id` and the grid
+no longer knows what a column MEANS. One component now draws both views.
+
+**Broke / unresolved:** **Nothing has been through a browser.** Nine commits,
+six screens, all verified by TypeScript, ESLint and route checks — none by a
+human clicking. That is the largest outstanding risk in the project today.
+
+**A parallel session committed `aee9d14` mid-work**, adding a sidebar and
+dashboard and moving the day view to `/staff/day`. The sidebar and dashboard
+were kept. Three things it left behind were fixed: `/staff/day` had no
+`requireProfile()` and its comment claimed the layout was the guard — a layout
+is not re-run between pages that share it, and `proxy.ts` says in its own
+comment that it guards nothing; the status highlighter had been orphaned when
+the day view moved; and the sidebar advertised the booking form as unbuilt.
+Worth knowing two agents can be in this repo at once.
+
+The day grid's first version had three proportion faults, all mine: no padding
+because `StaffShell` supplies none, fixed 11rem columns, and blocks clamped to
+46px so four lines of text would fit — which made a twenty-minute trim look
+like an hour and defeated the only thing a grid does better than a list.
+
+I killed the running dev server with an over-broad `pkill`. Restarted.
+
+**Three stages remain and all three need migrations.** Live editing and
+planning mode wait on `move_visit()` — which needs
+`appointments_no_double_booking` to become deferrable, because shifting a
+chained visit trips the constraint mid-statement on a final state that is
+perfectly legal. My profile waits on a function letting a stylist set their own
+status and edit their own details; `employee.record.manage` is all-or-nothing
+across the whole team and cannot express "yourself".
+
+**Deferred on purpose, all three recorded:** Google Calendar until the staff
+calendar has been used; automated messages, per DECISIONS #29; and Power BI,
+where the finding worth keeping is that it connects with a Postgres role rather
+than a Supabase JWT — so `current_org_id()` returns null and every policy
+denies, while connecting as `postgres` bypasses RLS and reads every salon's
+allergies. The work is a `reporting` schema of views, not the BI tool.
+
+Website colour and content editing was ruled out of v1 as the CMS, DECISIONS
+#11; organization settings and the logo were ruled in. Announcements were
+declined again as the internal notes system.
+
+**Next:** Click through it. Then the second migration, and steps 5, 6 and 9.
+The service menu editor in Phase 6 is the item with the most cost attached to
+not having it — every price and duration in the tree is still a guess, and
+correcting one means writing SQL.
+
+---
+
 ## 2026-08-22 — The booking engine, and the day the staff look at
 
 **Built:** Migrations 027 to 038, all applied to dev, plus the staff day view.
