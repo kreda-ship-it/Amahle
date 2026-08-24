@@ -21,7 +21,7 @@ import { saveService, type ServiceEdit } from "./actions";
 export type ServiceRowData = {
   id: string;
   name: string;
-  category: string | null;
+  category_id: string | null;
   price: number;
   duration_minutes: number;
   buffer_minutes: number | null;

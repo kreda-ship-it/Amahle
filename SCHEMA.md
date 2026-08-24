@@ -259,7 +259,7 @@ What the salon offers. The first table anonymous visitors read.
 |---|---|---|
 | `name` | text | Unique per organization, among live rows |
 | `description` | text | |
-| `category` | text | e.g. "Colour", "Cuts" |
+| `category` | text | **Dead.** Nothing reads it. The headings come from `category_id` → `service_categories`. Sixty of eighty-four rows held NULL and the rest carried five headings that predate the salon's real menu, which is why every page printed "More". Kept only because dropping a column is its own migration. |
 | `price` | numeric(10,2) | |
 | `price_display` | text | `exact` → "$120", `from` → "from $120", `hidden` → no price shown. A flat number is a marketing decision, not a fact — braiding and colour are priced by length. |
 | `duration_minutes` | int | How long it takes |
@@ -268,7 +268,7 @@ What the salon offers. The first table anonymous visitors read.
 | `image_path` | text | |
 | `display_order` | int | |
 | `is_active` | boolean | |
-| `category_id` | uuid, nullable | The branch of the tree this hangs from. Replaces `category` text, which the public pages still read — both exist until they move over. |
+| `category_id` | uuid, nullable | The branch of the tree this hangs from. **The only heading anything reads.** Resolved through `/lib/services/categories`, which returns two levels — a top-level heading and its sub-headings. Null lands the service under "More" rather than dropping it. |
 | `is_included_with_others` | boolean | Free when booked alongside another chargeable service, full price alone. **The duration always counts.** See below. |
 | `lead_minutes` | int, nullable | How long the LEAD stylist is needed. Null means one person does the whole appointment. Less than `duration_minutes` means an assistant finishes it. |
 | `latest_start_time` | time, nullable | The latest clock time this service may START. Null keeps the old rule — it must finish inside working hours. |

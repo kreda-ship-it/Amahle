@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { describeDays, formatTime, groupHours } from "@/lib/site/hours";
 import { imageUrl } from "@/lib/site/images";
+import { getServiceTree } from "@/lib/services/categories";
 import { getOrganization } from "@/lib/site/organization";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
 import {
@@ -31,11 +32,19 @@ import { PhoneLink } from "./phone-link";
  * note on it in globals.css.
  */
 
-/** One service, as this page needs it. */
+/**
+ * One service, as this page needs it.
+ *
+ * `category` is the TOP-LEVEL heading resolved from the tree, not a column.
+ * "Braiding" rather than "With extensions": on a front page the point of the
+ * word is to show breadth, and a sub-heading narrows where breadth is wanted.
+ */
 type FeaturedService = {
   id: string;
   name: string;
+  category_id: string | null;
   category: string | null;
+  topId: string | null;
   price: number;
   price_display: string;
   duration_minutes: number;
@@ -52,6 +61,10 @@ type FeaturedService = {
  * So: at most two from each category, in the salon's own order, up to six.
  * No cleverness about which two, because the salon already decided that when
  * it set `display_order`.
+ *
+ * Counted per TOP-LEVEL heading. Spreading across sub-headings would put
+ * two knotless styles and two cornrow styles on the page and call it four
+ * categories, which is the opposite of what this function is for.
  */
 function featured(services: FeaturedService[], limit = 6): FeaturedService[] {
   const takenPerCategory = new Map<string, number>();
@@ -60,7 +73,7 @@ function featured(services: FeaturedService[], limit = 6): FeaturedService[] {
   for (const service of services) {
     if (chosen.length >= limit) break;
 
-    const category = service.category ?? "More";
+    const category = service.topId ?? "more";
     const taken = takenPerCategory.get(category) ?? 0;
 
     if (taken >= 2) continue;
@@ -135,7 +148,7 @@ export default async function Home() {
     supabase
       .from("services")
       .select(
-        "id, name, category, price, price_display, duration_minutes, is_bookable_online",
+        "id, name, category_id, price, price_display, duration_minutes, is_bookable_online",
       )
       .eq("org_id", org.id)
       .order("display_order"),
@@ -154,7 +167,21 @@ export default async function Home() {
       .limit(6),
   ]);
 
-  const services: FeaturedService[] = servicesResult.data ?? [];
+  /* The headings, resolved here so the render below stays about layout.
+     A service filed nowhere keeps a null category and simply prints its
+     duration alone, which is what it did before there were headings. */
+  const tree = await getServiceTree(org.id);
+
+  const services: FeaturedService[] = (servicesResult.data ?? []).map(
+    (service) => {
+      const top = service.category_id
+        ? (tree.topOf.get(service.category_id) ?? null)
+        : null;
+
+      return { ...service, category: top?.name ?? null, topId: top?.id ?? null };
+    },
+  );
+
   const styles = featured(services);
   const employees = employeesResult.data ?? [];
   const galleryImages = galleryResult.data ?? [];

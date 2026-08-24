@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { requirePermission } from "@/lib/auth";
+import { getServiceTree, groupServices } from "@/lib/services/categories";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -42,7 +43,7 @@ export default async function ServicesPage() {
   const { data, error } = await supabase
     .from("services")
     .select(
-      `id, name, category, price, duration_minutes, buffer_minutes,
+      `id, name, category_id, price, duration_minutes, buffer_minutes,
        lead_minutes, latest_start_time, is_bookable_online, is_active`,
     )
     .is("deleted_at", null)
@@ -69,16 +70,41 @@ export default async function ServicesPage() {
     (settings?.public_settings as Record<string, unknown> | null)
       ?.default_buffer_minutes ?? null;
 
-  /* Grouped the way the salon lists them. `category` is the older text column
-     and still what every service carries; the category TREE from migration 027
-     is a second structure and belongs to the screen that edits it. */
-  const groups = new Map<string, ServiceRowData[]>();
+  /*
+   * Grouped the way the salon lists them, from `service_categories` — the
+   * tree migration 027 built and nothing read until now. Two levels, so a
+   * sub-heading prints beneath its parent rather than beside it.
+   *
+   * A service filed nowhere lands in "Everything else". Nothing is there
+   * today, and something will be the moment a service is added without a
+   * heading chosen.
+   */
+  const tree = await getServiceTree(org.id);
+  const { groups, unfiled } = groupServices(services, tree);
 
-  for (const service of services) {
-    const key = service.category ?? "Everything else";
-    const list = groups.get(key) ?? [];
-    list.push(service);
-    groups.set(key, list);
+  const sections: { key: string; heading: string; list: ServiceRowData[] }[] =
+    [];
+
+  for (const group of groups) {
+    if (group.direct.length > 0) {
+      sections.push({
+        key: group.category.id,
+        heading: group.category.name,
+        list: group.direct,
+      });
+    }
+
+    for (const section of group.sections) {
+      sections.push({
+        key: section.category.id,
+        heading: `${group.category.name} · ${section.category.name}`,
+        list: section.services,
+      });
+    }
+  }
+
+  if (unfiled.length > 0) {
+    sections.push({ key: "none", heading: "Everything else", list: unfiled });
   }
 
   return (
@@ -100,17 +126,17 @@ export default async function ServicesPage() {
       ) : services.length === 0 ? (
         <p className="text-ink-muted">No services yet.</p>
       ) : (
-        [...groups.entries()].map(([category, list]) => (
-          <section key={category} className="border border-line">
+        sections.map((section) => (
+          <section key={section.key} className="border border-line">
             <h2 className="border-b border-line bg-surface-sunk px-4 py-2.5 font-medium">
-              {category}
+              {section.heading}
               <span className="ml-2 text-sm font-normal text-ink-muted">
-                {list.length}
+                {section.list.length}
               </span>
             </h2>
 
             <ul className="divide-y divide-line">
-              {list.map((service) => (
+              {section.list.map((service) => (
                 <ServiceRow
                   key={service.id}
                   service={service}

@@ -18,7 +18,8 @@ export type BookableService = {
   id: string;
   name: string;
   description: string | null;
-  category: string | null;
+  /** The heading it hangs from. Resolve names through /lib/services/categories. */
+  category_id: string | null;
   price: number;
   price_display: string;
   duration_minutes: number;
@@ -51,7 +52,7 @@ export async function getBookableServices(
   const { data } = await supabase
     .from("services")
     .select(
-      "id, name, description, category, price, price_display, duration_minutes",
+      "id, name, description, category_id, price, price_display, duration_minutes",
     )
     .eq("org_id", orgId)
     .eq("is_bookable_online", true)
@@ -78,7 +79,7 @@ export async function getBookableServices_byIds(
   const { data } = await supabase
     .from("services")
     .select(
-      "id, name, description, category, price, price_display, duration_minutes",
+      "id, name, description, category_id, price, price_display, duration_minutes",
     )
     .eq("org_id", orgId)
     .eq("is_bookable_online", true)

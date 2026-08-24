@@ -17,6 +17,7 @@ import {
   salonDaysFrom,
   salonTime,
 } from "@/lib/site/datetime";
+import { getServiceTree, groupServices } from "@/lib/services/categories";
 import { getOrganization } from "@/lib/site/organization";
 import { bookingEssentials } from "@/lib/site/policies";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
@@ -626,25 +627,26 @@ async function ChooseService({
   const chosenIds = already.map((service) => service.id);
 
   /*
-   * Grouped by category, because a flat list of twenty-four mixes a
+   * Grouped by heading, because a flat list of eighty-four mixes a
    * thirty-minute men's haircut in with a five-hour cornrow job and asks
-   * the customer to scan all of it. The services page has grouped this
-   * way from the start; the picker had not caught up.
+   * the customer to scan all of it.
    *
-   * A Map keeps the salon's own `display_order` — insertion order is the
-   * category order, and each list stays in the order the query returned.
+   * Two levels, from `service_categories`. The old `category` text column
+   * put sixty of these under a heading called "More", which is a flat list
+   * wearing a hat.
    */
-  const byCategory = new Map<string, typeof services>();
+  const tree = await getServiceTree(orgId);
+  const { groups, unfiled } = groupServices(services, tree);
 
-  for (const service of services) {
-    const category = service.category ?? "More";
-    const existing = byCategory.get(category);
+  /* Chips are TOP-LEVEL only. Eighteen chips is the wall of choice the
+     chips exist to avoid, and "Relaxer" beside "Braiding" reads as though
+     they were the same size of decision. */
+  const chips = groups.map((group) => ({
+    id: group.category.id,
+    name: group.category.name,
+  }));
 
-    if (existing) existing.push(service);
-    else byCategory.set(category, [service]);
-  }
-
-  const categories = [...byCategory.keys()];
+  if (unfiled.length > 0) chips.push({ id: "more", name: "More" });
 
   /*
    * A filter rather than a step. Narrowing is the right instinct — it is
@@ -652,11 +654,53 @@ async function ChooseService({
    * costs a tap to everybody, including the man who wants a haircut and
    * can already see it. The headings do the narrowing; the chips are for
    * jumping straight to braiding without scrolling past everything else.
+   *
+   * The chosen chip is a category ID in the URL rather than its name, so
+   * renaming a heading does not break a link somebody has open.
    */
   const chosenCategory =
-    params.cat && byCategory.has(params.cat) ? params.cat : null;
+    params.cat && chips.some((chip) => chip.id === params.cat)
+      ? params.cat
+      : null;
 
-  const showing = chosenCategory ? [chosenCategory] : categories;
+  /*
+   * Flattened to a list of headings, each with its own level. A parent with
+   * nothing directly under it still earns a heading — Braiding holds no
+   * services of its own and every braid is beneath it — so a section may
+   * carry an empty list and print only its name.
+   */
+  type Section = {
+    key: string;
+    heading: string;
+    level: 1 | 2;
+    services: typeof services;
+  };
+
+  const showing: Section[] = [];
+
+  for (const group of groups) {
+    if (chosenCategory && chosenCategory !== group.category.id) continue;
+
+    showing.push({
+      key: group.category.id,
+      heading: group.category.name,
+      level: 1,
+      services: group.direct,
+    });
+
+    for (const section of group.sections) {
+      showing.push({
+        key: section.category.id,
+        heading: section.category.name,
+        level: 2,
+        services: section.services,
+      });
+    }
+  }
+
+  if (unfiled.length > 0 && (!chosenCategory || chosenCategory === "more")) {
+    showing.push({ key: "more", heading: "More", level: 1, services: unfiled });
+  }
 
   const to = (ids: string[]) => {
     const query = new URLSearchParams();
@@ -701,19 +745,19 @@ async function ChooseService({
         </p>
       )}
 
-      {categories.length > 1 && (
+      {chips.length > 1 && (
         <div className="mt-8 flex flex-wrap gap-2">
           <Chip href={filtered(params, null)} active={!chosenCategory}>
             Everything
           </Chip>
 
-          {categories.map((category) => (
+          {chips.map((chip) => (
             <Chip
-              key={category}
-              href={filtered(params, category)}
-              active={chosenCategory === category}
+              key={chip.id}
+              href={filtered(params, chip.id)}
+              active={chosenCategory === chip.id}
             >
-              {category}
+              {chip.name}
             </Chip>
           ))}
         </div>
@@ -725,14 +769,27 @@ async function ChooseService({
           <PhoneLink phone={phone} />.
         </p>
       ) : (
-        showing.map((category) => (
-          <section key={category} className="mt-10">
-            {!chosenCategory && categories.length > 1 && (
-              <h2 className="font-display text-2xl font-normal">{category}</h2>
-            )}
+        showing.map((section) => (
+          <section
+            key={section.key}
+            className={section.level === 1 ? "mt-10" : "mt-8"}
+          >
+            {/* The chosen chip already names the branch, so repeating it as a
+                heading is the same word twice with nothing between them. */}
+            {section.level === 1
+              ? !chosenCategory &&
+                chips.length > 1 && (
+                  <h2 className="font-display text-2xl font-normal">
+                    {section.heading}
+                  </h2>
+                )
+              : chips.length > 1 && (
+                  <h3 className="label text-ink-muted">{section.heading}</h3>
+                )}
 
+            {section.services.length > 0 && (
             <ul className="mt-4 divide-y divide-line border-t border-line">
-              {(byCategory.get(category) ?? []).map((service) => {
+              {section.services.map((service) => {
                 const price = formatPrice(
                   service.price,
                   service.price_display,
@@ -769,6 +826,7 @@ async function ChooseService({
                 );
               })}
             </ul>
+            )}
           </section>
         ))
       )}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 
 import { imageUrl } from "@/lib/site/images";
+import { getServiceTree } from "@/lib/services/categories";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -60,7 +61,7 @@ export default async function TeamPage() {
    * it quietly does not. Three small queries and a join in memory is a few
    * milliseconds and no guesswork. There are twenty-odd rows in each.
    */
-  const [employeesResult, linksResult, servicesResult] = await Promise.all([
+  const [employeesResult, linksResult, servicesResult, tree] = await Promise.all([
     supabase
       .from("employees")
       .select("id, full_name, photo_path, position, bio")
@@ -74,27 +75,39 @@ export default async function TeamPage() {
 
     supabase
       .from("services")
-      .select("id, category")
+      .select("id, category_id")
       .eq("org_id", org.id)
       .order("display_order"),
+
+    getServiceTree(org.id),
   ]);
 
   const employees: Employee[] = employeesResult.data ?? [];
   const failed = Boolean(employeesResult.error);
 
-  // service id -> its category, so a link row can be turned into a category
-  // name without searching the services list every time.
+  /*
+   * service id -> the TOP-LEVEL heading it hangs from, so a link row can be
+   * turned into a name without searching the services list every time.
+   *
+   * Top-level and not the leaf: "Fikir — Braiding" is what a customer is
+   * asking about. "Fikir — With extensions · Without extensions" is the same
+   * fact, longer, and phrased as though she does two different jobs.
+   */
   const categoryOfService = new Map<string, string>();
   for (const service of servicesResult.data ?? []) {
-    if (service.category) categoryOfService.set(service.id, service.category);
+    const top = service.category_id
+      ? tree.topOf.get(service.category_id)
+      : undefined;
+
+    if (top) categoryOfService.set(service.id, top.name);
   }
 
   /*
    * employee id -> the categories they work across.
    *
    * Categories rather than the services themselves, deliberately. Selam
-   * covers all twenty-four; printing them under her name is a wall of text
-   * nobody reads. "Hairstyles · Braids & More · Coloring" answers the
+   * covers most of the menu; printing it under her name is a wall of text
+   * nobody reads. "Braiding · Hair colour · Haircut & trim" answers the
    * question a customer is actually asking — can this person do my hair.
    *
    * A Set because a stylist doing eight services in one category should have
@@ -104,7 +117,7 @@ export default async function TeamPage() {
    */
   const categoriesOfEmployee = new Map<string, Set<string>>();
   for (const service of servicesResult.data ?? []) {
-    const category = service.category;
+    const category = categoryOfService.get(service.id);
     if (!category) continue;
 
     for (const link of linksResult.data ?? []) {

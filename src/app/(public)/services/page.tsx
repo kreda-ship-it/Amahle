@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
+import { getServiceTree, groupServices } from "@/lib/services/categories";
 import { getOrganization } from "@/lib/site/organization";
 import { formatDuration, formatPrice } from "@/lib/site/pricing";
 import { stockStylePhoto } from "@/lib/site/stock-photos";
@@ -17,6 +18,11 @@ import { PageHeading } from "../page-heading";
  * The whole menu, grouped into the categories the salon chose, in the order it
  * chose. Nothing here is written down in code — add a service in the database
  * and it appears; change its category and it moves.
+ *
+ * The headings come from `service_categories` rather than the old `category`
+ * text column, and that is a correction rather than a refactor: sixty of the
+ * eighty-four services carried no text at all and were printed under a
+ * heading called "More". See /lib/services/categories.
  *
  * Laid out as a printed price list: a number, a name, what it involves, and
  * the money in a column down the right-hand edge. Somebody on this page is
@@ -35,7 +41,7 @@ type Service = {
   id: string;
   name: string;
   description: string | null;
-  category: string | null;
+  category_id: string | null;
   price: number;
   price_display: string;
   duration_minutes: number;
@@ -58,23 +64,43 @@ export default async function ServicesPage() {
   const { data, error } = await supabase
     .from("services")
     .select(
-      "id, name, description, category, price, price_display, duration_minutes, is_bookable_online",
+      "id, name, description, category_id, price, price_display, duration_minutes, is_bookable_online",
     )
     .eq("org_id", org.id)
     .order("display_order");
 
   const services: Service[] = data ?? [];
 
-  // Group into categories, keeping the salon's chosen order. A service with no
-  // category still belongs on the page, so it falls into "More".
-  const categories = new Map<string, Service[]>();
+  /* Two levels, because the menu has two: Braiding holds no services of its
+     own and everything sits under with- or without-extensions. A service
+     filed nowhere still belongs on the page, so it falls into "More". */
+  const tree = await getServiceTree(org.id);
+  const { groups, unfiled } = groupServices(services, tree);
 
-  for (const service of services) {
-    const category = service.category ?? "More";
-    const existing = categories.get(category);
+  const sections: { key: string; heading: string; services: Service[] }[] = [];
 
-    if (existing) existing.push(service);
-    else categories.set(category, [service]);
+  for (const group of groups) {
+    if (group.direct.length > 0) {
+      sections.push({
+        key: group.category.id,
+        heading: group.category.name,
+        services: group.direct,
+      });
+    }
+
+    for (const section of group.sections) {
+      /* A sub-heading printed under its parent rather than beside it —
+         "Braiding · With extensions" says what "With extensions" cannot. */
+      sections.push({
+        key: section.category.id,
+        heading: `${group.category.name} · ${section.category.name}`,
+        services: section.services,
+      });
+    }
+  }
+
+  if (unfiled.length > 0) {
+    sections.push({ key: "more", heading: "More", services: unfiled });
   }
 
   // True when at least one service says "call us", so the note explaining why
@@ -104,15 +130,15 @@ export default async function ServicesPage() {
           <PhoneLink phone={org.phone} /> in the meantime.
         </p>
       ) : (
-        [...categories].map(([category, categoryServices]) => (
-          <section key={category} className="shell pt-14">
+        sections.map((section) => (
+          <section key={section.key} className="shell pt-14">
             <div className="label flex items-baseline justify-between border-b border-brand/30 pb-3 text-ink">
-              <h2>{category}</h2>
+              <h2>{section.heading}</h2>
               <span className="text-ink-muted">From</span>
             </div>
 
             <ul className="divide-y divide-line">
-              {categoryServices.map((service, index) => {
+              {section.services.map((service, index) => {
                 const price = formatPrice(
                   service.price,
                   service.price_display,

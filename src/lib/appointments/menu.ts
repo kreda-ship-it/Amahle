@@ -1,3 +1,4 @@
+import { getServiceTree, pathOf } from "@/lib/services/categories";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
@@ -21,6 +22,16 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export type StaffService = {
   id: string;
   name: string;
+  /** The heading it hangs from, as a row. */
+  category_id: string | null;
+  /**
+   * That heading spelled out — "Braiding · With extensions" — resolved here
+   * rather than in the screens.
+   *
+   * It is a PATH and not a leaf name because everywhere this lands, it lands
+   * alone: a line in a dropdown, a label beside a service. "With extensions"
+   * on its own is not an answer to anything.
+   */
   category: string | null;
   price: number;
   price_display: string;
@@ -66,22 +77,28 @@ export type LeadEmployee = {
 export async function getStaffServices(orgId: string): Promise<StaffService[]> {
   const supabase = await createSupabaseServerClient();
 
-  const { data, error } = await supabase
-    .from("services")
-    .select(
-      "id, name, category, price, price_display, duration_minutes, is_bookable_online",
-    )
-    .eq("org_id", orgId)
-    .eq("is_active", true)
-    .is("deleted_at", null)
-    .order("display_order");
+  const [{ data, error }, tree] = await Promise.all([
+    supabase
+      .from("services")
+      .select(
+        "id, name, category_id, price, price_display, duration_minutes, is_bookable_online",
+      )
+      .eq("org_id", orgId)
+      .eq("is_active", true)
+      .is("deleted_at", null)
+      .order("display_order"),
+    getServiceTree(orgId),
+  ]);
 
   if (error) {
     console.error("getStaffServices failed", error);
     return [];
   }
 
-  return data ?? [];
+  return (data ?? []).map((service) => ({
+    ...service,
+    category: pathOf(service.category_id, tree),
+  }));
 }
 
 /**
