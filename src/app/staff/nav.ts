@@ -33,7 +33,7 @@ const ITEMS: NavItem[] = [
   { label: "Tomorrow's calls", href: "/staff/calls", built: true, permission: null },
   { label: "Who does what", href: "/staff/who-does-what", built: true, permission: null },
   { label: "You",       href: "/staff/me",        built: true,  permission: null },
-  { label: "Customers", href: "/staff/customers", built: false, permission: "customer.view" },
+  { label: "Customers", href: "/staff/customers", built: true,  permission: "customer.view" },
   { label: "Team",      href: "/staff/team",      built: false, permission: "employee.record.manage" },
   { label: "Services",  href: "/staff/services",  built: true,  permission: "service.manage" },
   { label: "Settings",  href: "/staff/settings",  built: false, permission: "organization.edit" },
