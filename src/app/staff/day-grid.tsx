@@ -417,6 +417,7 @@ export function DayGrid({
   const [showWash, setShowWash] = useState(false);
   const [showEnded, setShowEnded] = useState(false);
   const [undoable, setUndoable] = useState<StatusChange[] | null>(null);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
 
@@ -474,6 +475,47 @@ export function DayGrid({
     /** A pull on the bottom edge changes the length instead of the time. */
     resizing: boolean;
   } | null>(null);
+
+  /*
+   * PRINTING FORCES A ZOOM, and that is the whole reason this is a button
+   * rather than telling somebody to press Cmd-P.
+   *
+   * The grid draws fifteen hours at whatever magnification is on screen. At
+   * the top zoom that is sixty pages; at the bottom it is unreadable. So the
+   * button drops to 40 pixels an hour — fifteen hours in about nine inches,
+   * which is one landscape page — prints, and puts the zoom back.
+   *
+   * `onafterprint` rather than a timer: the print dialogue is modal and can
+   * sit open for a minute while somebody picks a printer, and restoring the
+   * zoom underneath it would print the wrong thing.
+   */
+  const zoomBeforePrint = useRef(zoom);
+
+  useEffect(() => {
+    if (!printing) return;
+
+    function done() {
+      setZoom(zoomBeforePrint.current);
+      setPrinting(false);
+    }
+
+    window.addEventListener("afterprint", done);
+
+    /* One frame, so the grid has actually re-rendered at the print zoom
+       before the dialogue captures it. */
+    const frame = requestAnimationFrame(() => window.print());
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("afterprint", done);
+    };
+  }, [printing]);
+
+  function printDay() {
+    zoomBeforePrint.current = zoom;
+    setZoom(1);
+    setPrinting(true);
+  }
 
   /** A length change sent and not yet returned, in minutes. */
   const [resized, setResized] = useState<Record<string, number>>({});
@@ -1248,7 +1290,7 @@ export function DayGrid({
         Wrapping below xl so two chips sit side by side rather than stacking
         two mostly-empty rows above a grid that wants the height.
       */}
-      <div className="flex flex-wrap items-start gap-3 xl:w-[17rem] xl:shrink-0 xl:flex-col">
+      <div className="flex flex-wrap items-start gap-3 print:hidden xl:w-[17rem] xl:shrink-0 xl:flex-col">
         {pickerDate && today && (
           <DatePicker selected={pickerDate} today={today} />
         )}
@@ -1259,7 +1301,7 @@ export function DayGrid({
       <div className="flex min-w-0 flex-1 flex-col gap-3">
 
       {/* ---------- what is shown, and how big ---------- */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm print:hidden">
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -1307,6 +1349,15 @@ export function DayGrid({
           </div>
         )}
 
+        <button
+          type="button"
+          onClick={printDay}
+          title="Print this day"
+          className="border border-line px-2.5 py-1 transition-colors hover:border-ink"
+        >
+          Print
+        </button>
+
         <div className="ml-auto flex items-center gap-2">
           <span className="label text-ink-muted">Zoom</span>
           <button
@@ -1343,7 +1394,7 @@ export function DayGrid({
          * clock stay put while you move through the day.
          */
         <div
-          className="max-h-[68vh] touch-pan-x touch-pan-y overflow-auto border border-line"
+          className="max-h-[68vh] touch-pan-x touch-pan-y overflow-auto border border-line print:max-h-none print:overflow-visible"
           onPointerDown={paneDown}
           onPointerMove={paneMove}
           onPointerUp={paneUp}
@@ -1372,14 +1423,14 @@ export function DayGrid({
               what happened when both were z-30 and this one won on document
               order. Do not raise this number; raise the shell's. */}
           <div
-            className="sticky top-0 z-30 flex bg-surface"
+            className="sticky top-0 z-30 flex bg-surface print:static"
             style={{ width: rowWidth }}
           >
             {/* The corner, sticky on BOTH axes. It is the one cell that has to
                 hold still whichever way you scroll — without it the clock
                 slides out from underneath its own heading row. */}
             <div
-              className="sticky left-0 shrink-0 border-r border-b border-line bg-surface"
+              className="sticky left-0 shrink-0 border-r border-b border-line bg-surface print:static"
               style={{ width: GUTTER }}
             />
 
@@ -1411,7 +1462,7 @@ export function DayGrid({
               containing block for the absolutely-placed hour labels.
             */}
             <div
-              className="sticky left-0 z-20 shrink-0 border-r border-line bg-surface"
+              className="sticky left-0 z-20 shrink-0 border-r border-line bg-surface print:static"
               style={{ width: GUTTER, height: gridHeight }}
             >
               {hours.map((minute) => (
@@ -1816,7 +1867,7 @@ export function DayGrid({
         other for the same corner would be worse than either.
       */}
       {(undoable || undoMove || error) && (
-        <div className="sticky bottom-4 mx-auto flex w-fit items-center gap-4 border border-ink bg-surface px-4 py-2.5 text-sm shadow-lg">
+        <div className="sticky bottom-4 mx-auto flex w-fit items-center gap-4 border border-ink bg-surface px-4 py-2.5 text-sm shadow-lg print:hidden">
           {error ? (
             <span role="alert" className="text-brand">
               {error}

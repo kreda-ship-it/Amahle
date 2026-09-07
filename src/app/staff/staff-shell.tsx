@@ -175,7 +175,7 @@ export function StaffShell({
          * Ties go to whichever element comes later, and content always comes
          * later than the frame around it.
          */
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-surround text-ink-inverse transition-all duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-surround text-ink-inverse transition-all duration-200 print:hidden lg:static lg:translate-x-0 ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         } ${wide ? "" : "lg:w-14"}`}
       >
@@ -292,7 +292,7 @@ export function StaffShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line px-5 lg:hidden">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line px-5 print:hidden lg:hidden">
           <button
             type="button"
             onClick={() => setOpen(true)}

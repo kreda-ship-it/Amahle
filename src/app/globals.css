@@ -314,3 +314,42 @@ body {
 @utility blend-gold {
   mix-blend-mode: screen;
 }
+
+/* ------------------------------------------------------------------
+   PAPER.
+
+   The salon is coming off a paper diary, and the first Saturday the
+   wifi drops without something to pin up is the day they go back to it
+   for good. So the day view prints, and what it prints is the GRID —
+   people across, time down — rather than a list. On paper you cannot
+   book, so the question stops being "what is on" and becomes "where is
+   the gap I can pencil somebody into".
+
+   Landscape, because the grid is wider than it is tall and a portrait
+   page would give four stylists two inches each.
+   ------------------------------------------------------------------ */
+@media print {
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+
+  /*
+   * Browsers strip background colours when printing, to save toner on
+   * pages that were never designed for it. Here the tint IS the status,
+   * so it has to survive — the word is in the box as well, per the
+   * colour rule, but a printed day with every block the same white is
+   * harder to read at arm's length than one that is not.
+   */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* The screen ground is a warm off-white and the ink is not quite
+     black. On paper both should be the real thing. */
+  html,
+  body {
+    background: #fff;
+  }
+}
