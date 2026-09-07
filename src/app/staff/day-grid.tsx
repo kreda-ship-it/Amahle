@@ -14,6 +14,7 @@ import {
   resizeAppointment,
   type StatusChange,
 } from "./actions";
+import { AppointmentPanel } from "./appointment-panel";
 import { DatePicker } from "./date-picker";
 import { StatusPanel } from "./status-panel";
 import { dropPlannedMove, setPlannedMove } from "./plan-actions";
@@ -54,9 +55,13 @@ export type Row = {
   employee_requested: boolean;
   for_name: string | null;
   notes: string | null;
+  /** What this row was charged. `finish` rows carry zero by design. */
+  price: number | null;
+  /** `online` or `staff` — how it was booked. PROJECT.md's real measure. */
+  source: string | null;
   employee: { id: string; full_name: string } | null;
   service: { name: string; is_included_with_others: boolean } | null;
-  customer: { full_name: string; phone: string } | null;
+  customer: { id: string; full_name: string; phone: string } | null;
 
   /*
    * WHICH COLUMN THIS BELONGS IN, DECIDED ON THE SERVER.
@@ -87,6 +92,8 @@ type Props = {
    */
   columns: { id: string; label: string; rota?: ColumnRota }[];
   timezone: string;
+  /** For the price on an opened booking. */
+  currency: string;
   /** May drag, reassign and resize. `appointment.manage`. */
   canManage: boolean;
   /*
@@ -399,6 +406,7 @@ export function DayGrid({
   rows,
   columns,
   timezone,
+  currency,
   canManage,
   markable,
   ownEmployeeId,
@@ -418,6 +426,16 @@ export function DayGrid({
   const [showEnded, setShowEnded] = useState(false);
   const [undoable, setUndoable] = useState<StatusChange[] | null>(null);
   const [printing, setPrinting] = useState(false);
+
+  /*
+   * Which visit is open, by id rather than by row.
+   *
+   * An id rather than the rows themselves, so a refresh landing underneath an
+   * open panel updates what it shows instead of freezing whatever was true
+   * when it opened. With the day now reloading itself every thirty seconds,
+   * holding a copy would have meant a panel that quietly went stale.
+   */
+  const [openVisit, setOpenVisit] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
 
@@ -871,7 +889,21 @@ export function DayGrid({
   const heads = columns;
 
   function mark(row: Row) {
-    if (!brush || !markable.includes(brush)) return;
+    /*
+     * No status selected means the tap is asking to LOOK, not to change.
+     * Before this it meant nothing at all — the commonest gesture on the
+     * screen did nothing, and the notes fetched with every row were
+     * unreachable.
+     */
+    if (!brush) {
+      setOpenVisit((current) =>
+        current === row.visit_id ? null : row.visit_id,
+      );
+
+      return;
+    }
+
+    if (!markable.includes(brush)) return;
 
     /*
      * Your own work, or none. `set_appointment_status()` says the same thing
@@ -1961,6 +1993,20 @@ export function DayGrid({
         same way from the reader's point of view, and two strips racing each
         other for the same corner would be worse than either.
       */}
+      {/* Last in the tree on purpose: it shares z-30 with the grid's sticky
+          heading and wins on document order, which keeps the shell's rule
+          intact — content stops at z-30, the shell owns everything above. */}
+      {openVisit && (
+        <AppointmentPanel
+          rows={rows
+            .filter((row) => row.visit_id === openVisit)
+            .sort((a, b) => a.starts_at.localeCompare(b.starts_at))}
+          timezone={timezone}
+          currency={currency}
+          onClose={() => setOpenVisit(null)}
+        />
+      )}
+
       {(undoable || undoMove || error) && (
         <div className="sticky bottom-4 mx-auto flex w-fit items-center gap-4 border border-ink bg-surface px-4 py-2.5 text-sm shadow-lg print:hidden">
           {error ? (

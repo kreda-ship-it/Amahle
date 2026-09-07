@@ -119,10 +119,10 @@ export default async function StaffWeekPage({
         .from("appointments")
         .select(
           `id, visit_id, starts_at, ends_at, blocked_until, phase, status, employee_requested,
-           for_name, notes,
+           for_name, notes, price, source,
            employee:employees (id, full_name),
            service:services (name, is_included_with_others),
-           customer:customers (full_name, phone)`,
+           customer:customers (id, full_name, phone)`,
         )
         .eq("employee_id", chosen)
         .gte("starts_at", from)
@@ -247,6 +247,7 @@ export default async function StaffWeekPage({
           rows={rows}
           columns={heads}
           timezone={org.timezone}
+          currency={org.currency}
           canManage={mayManage}
           markable={markableStatuses(mayManage, employee !== null)}
           ownEmployeeId={employee}

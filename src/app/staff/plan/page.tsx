@@ -83,10 +83,10 @@ export default async function PlanPage({
       .from("appointments")
       .select(
         `id, visit_id, starts_at, ends_at, blocked_until, phase, status, employee_requested,
-         for_name, notes,
+         for_name, notes, price, source,
          employee:employees (id, full_name),
          service:services (name, is_included_with_others),
-         customer:customers (full_name, phone)`,
+         customer:customers (id, full_name, phone)`,
       )
       .gte("starts_at", from)
       .lt("starts_at", to)
@@ -288,6 +288,7 @@ export default async function PlanPage({
           rows={rows}
           columns={heads}
           timezone={org.timezone}
+          currency={org.currency}
           canManage
           markable={markableStatuses(true, true)}
           ownEmployeeId={null}
