@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { can, currentEmployeeId, requireProfile } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
+import { markableStatuses } from "@/lib/appointments/status";
 import { combine, getRota } from "@/lib/appointments/rota";
 import {
   salonDateKey,
@@ -64,10 +65,11 @@ export default async function StaffDayPage({
     currentEmployeeId(),
   ]);
 
-  /* A stylist holds no appointment permission and may still mark her own
-     work — migration 042. The database decides which rows; this decides
-     whether the key is a set of buttons or a legend. */
-  const mayMark = mayManage || employee !== null;
+  /* Which statuses this person may apply is now worked out by
+     markableStatuses() at the point it is passed down — migration 042's list,
+     kept in one place so a screen cannot drift from the function enforcing
+     it. `employee` also goes down, because "your own work" is a fact about a
+     ROW and only the grid sees rows. */
 
   const today = salonDateKey(new Date(), org.timezone);
   const day = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? "")
@@ -176,7 +178,8 @@ export default async function StaffDayPage({
           columns={heads}
           timezone={org.timezone}
           canManage={mayManage}
-          canMark={mayMark}
+          markable={markableStatuses(mayManage, employee !== null)}
+          ownEmployeeId={employee}
           columnKind="employee"
           pickerDate={day}
           today={today}

@@ -37,12 +37,20 @@ type Props = {
    * is not a role — the caller works it out and the database decides which
    * rows. See migration 042.
    */
-  canMark: boolean;
+  /*
+   * Which statuses this person may APPLY. Empty makes the panel a legend.
+   *
+   * All eight always render. Somebody who cannot mark still has to know what
+   * the colours on the grid mean, and a key that hides the statuses you are
+   * not allowed to set is no longer a key.
+   */
+  markable: StatusKey[];
   brush: StatusKey | null;
   onBrush: (next: StatusKey | null) => void;
 };
 
-export function StatusPanel({ canMark, brush, onBrush }: Props) {
+export function StatusPanel({ markable, brush, onBrush }: Props) {
+  const canMark = markable.length > 0;
   const [shown, setShown] = useRemembered("staff-status-key-shown", true);
 
   const active = brush ? statusMeta(brush) : null;
@@ -108,14 +116,18 @@ export function StatusPanel({ canMark, brush, onBrush }: Props) {
             <button
               key={status.key}
               type="button"
-              disabled={!canMark}
-              aria-pressed={canMark ? selected : undefined}
+              /* Not "may this person mark anything" but "may they set THIS".
+                  A stylist was shown all eight and the database refused four
+                  of them, which reads as the software being broken rather
+                  than as a rule. */
+              disabled={!markable.includes(status.key)}
+              aria-pressed={markable.includes(status.key) ? selected : undefined}
               onClick={() => onBrush(selected ? null : status.key)}
               className={`flex items-center gap-2 border px-2 py-1 text-sm transition-colors ${
                 selected
                   ? "border-ink bg-surface-sunk"
                   : "border-transparent hover:border-line"
-              } ${canMark ? "" : "cursor-default"}`}
+              } ${markable.includes(status.key) ? "" : "cursor-default opacity-60"}`}
             >
               {/* The mark carries the colour; the word carries the meaning.
                   Around one man in twelve cannot reliably separate red from

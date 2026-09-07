@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { requirePermission } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
+import { markableStatuses } from "@/lib/appointments/status";
 import { combine, getRota } from "@/lib/appointments/rota";
 import {
   salonDateKey,
@@ -288,7 +289,8 @@ export default async function PlanPage({
           columns={heads}
           timezone={org.timezone}
           canManage
-          canMark
+          markable={markableStatuses(true, true)}
+          ownEmployeeId={null}
           columnKind="employee"
           pickerDate={day}
           today={today}

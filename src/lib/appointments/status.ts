@@ -73,3 +73,41 @@ export function statusMeta(key: string): StatusMeta {
     }
   );
 }
+
+/**
+ * The four an employee may set on their OWN appointments.
+ *
+ * Migration 042's list, in one place so a screen cannot drift from the
+ * function that enforces it. `cancelled` is not here — a cancellation has a
+ * customer on the other end of it and stays with the desk. Nor is `confirmed`,
+ * which is the day-before call round.
+ *
+ * If this ever disagrees with `set_appointment_status()`, the database wins
+ * and the screen is the thing that is wrong.
+ */
+export const OWN_WORK_STATUSES: StatusKey[] = [
+  "checked_in",
+  "in_progress",
+  "completed",
+  "no_show",
+];
+
+/**
+ * Which statuses this person may actually apply.
+ *
+ * An empty list means the key is a LEGEND rather than a highlighter — the
+ * panel still renders all eight, because somebody who cannot mark still needs
+ * to know what the colours on the grid mean.
+ *
+ * Worked out here rather than in each page, because three screens ask the same
+ * question and a fourth will.
+ */
+export function markableStatuses(
+  canManage: boolean,
+  isEmployee: boolean,
+): StatusKey[] {
+  if (canManage) return STATUSES.map((status) => status.key);
+  if (isEmployee) return [...OWN_WORK_STATUSES];
+
+  return [];
+}

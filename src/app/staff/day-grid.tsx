@@ -95,7 +95,16 @@ type Props = {
    * her own customer arrived or finished. The database decides which rows —
    * this only decides whether the key is a set of buttons or a legend.
    */
-  canMark: boolean;
+  markable: StatusKey[];
+  /*
+   * The signed-in person's own employee row, or null.
+   *
+   * An employee may set a status on their OWN appointments and nothing else.
+   * Without this the grid let them tap anybody's and learn the rule from a
+   * raised exception in a red strip — a round trip to be told no, for
+   * something the screen already knew.
+   */
+  ownEmployeeId: string | null;
   /*
    * What a column IS, which the grid needs for one reason only: dragging
    * sideways. Where columns are dates, crossing one is a change of day and so
@@ -391,7 +400,8 @@ export function DayGrid({
   columns,
   timezone,
   canManage,
-  canMark,
+  markable,
+  ownEmployeeId,
   columnKind,
   pickerDate,
   today,
@@ -755,7 +765,17 @@ export function DayGrid({
   const heads = columns;
 
   function mark(row: Row) {
-    if (!brush || !canMark) return;
+    if (!brush || !markable.includes(brush)) return;
+
+    /*
+     * Your own work, or none. `set_appointment_status()` says the same thing
+     * and would refuse this anyway; asking here means the answer arrives
+     * instantly and as a sentence rather than as a database exception.
+     */
+    if (!canManage && row.employee?.id !== ownEmployeeId) {
+      setError("You can only mark your own appointments.");
+      return;
+    }
 
     const was = overrides[row.id] ?? row.status;
     if (was === brush) return;
@@ -1233,7 +1253,7 @@ export function DayGrid({
           <DatePicker selected={pickerDate} today={today} />
         )}
 
-        <StatusPanel canMark={canMark} brush={brush} onBrush={setBrush} />
+        <StatusPanel markable={markable} brush={brush} onBrush={setBrush} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -1604,7 +1624,7 @@ export function DayGrid({
                       onPointerMove={dragMove}
                       onPointerUp={dragEnd}
                       onPointerCancel={dragEnd}
-                      disabled={!canMark && !canManage}
+                      disabled={markable.length === 0 && !canManage}
                       title={
                         refused
                           ? `Refused: ${refused}`
@@ -1613,7 +1633,7 @@ export function DayGrid({
                       aria-label={`${row.customer?.full_name ?? "Appointment"}, ${label(row)}, ${salonTime(row.starts_at, timezone)}, ${status.label}`}
                       className={`absolute overflow-hidden rounded-sm border-l-[3px] px-1.5 py-0.5 text-left text-[0.6875rem] leading-[1.35] ${
                         brush
-                          ? canMark
+                          ? markable.length > 0
                             ? "cursor-pointer hover:brightness-95"
                             : "cursor-default"
                           : canManage
