@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 
 import { signIn, type SignInState } from "@/lib/auth/actions";
@@ -57,6 +58,16 @@ export function LoginForm() {
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>
+
+      {/* Under the button, not beside the password box. Somebody who knows
+          their password should reach Sign in first; this is for the other
+          case, and putting it in the way of the common one helps nobody. */}
+      <Link
+        href="/reset"
+        className="text-sm text-zinc-500 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:hover:text-white"
+      >
+        Forgotten your password?
+      </Link>
     </form>
   );
 }
