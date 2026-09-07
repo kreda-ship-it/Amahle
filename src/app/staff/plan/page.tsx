@@ -3,7 +3,12 @@ import Link from "next/link";
 
 import { requirePermission } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
-import { salonDateKey, salonDayLabel, salonDayLabelLong } from "@/lib/site/datetime";
+import {
+  salonDateKey,
+  salonDayLabel,
+  salonDayLabelLong,
+  salonDayRange,
+} from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -63,6 +68,8 @@ export default async function PlanPage({
     ? (params.date as string)
     : today;
 
+  const { from, to } = salonDayRange(day, org.timezone);
+
   const [{ data: plansData }, { data, error }, columns] = await Promise.all([
     supabase
       .from("schedule_plans")
@@ -79,8 +86,8 @@ export default async function PlanPage({
          service:services (name, is_included_with_others),
          customer:customers (full_name, phone)`,
       )
-      .gte("starts_at", new Date(`${day}T00:00:00`).toISOString())
-      .lte("starts_at", new Date(`${day}T23:59:59`).toISOString())
+      .gte("starts_at", from)
+      .lt("starts_at", to)
       .is("deleted_at", null)
       .order("starts_at"),
     getDayColumns(org.id),

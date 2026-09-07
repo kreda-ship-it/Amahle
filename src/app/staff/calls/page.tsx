@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { can, requireProfile } from "@/lib/auth";
-import { salonDateKey, salonDayLabelLong } from "@/lib/site/datetime";
+import {
+  salonDateKey,
+  salonDayLabelLong,
+  salonDayRange,
+} from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -72,6 +76,8 @@ export default async function CallsPage({
     ? (params.date as string)
     : tomorrow;
 
+  const { from, to } = salonDayRange(day, org.timezone);
+
   const { data, error } = await supabase
     .from("appointments")
     .select(
@@ -80,8 +86,8 @@ export default async function CallsPage({
        service:services (name, is_included_with_others),
        customer:customers (full_name, phone)`,
     )
-    .gte("starts_at", new Date(`${day}T00:00:00`).toISOString())
-    .lte("starts_at", new Date(`${day}T23:59:59`).toISOString())
+    .gte("starts_at", from)
+    .lt("starts_at", to)
     .is("deleted_at", null)
     .order("starts_at");
 

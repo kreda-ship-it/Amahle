@@ -178,6 +178,50 @@ export function salonInstant(
 }
 
 /**
+ * The two instants that bound one salon-local calendar day.
+ *
+ * Returns a HALF-OPEN range: `from` is midnight at the start of the day and
+ * `to` is midnight at the start of the next one. So a query is
+ * `.gte(from).lt(to)` — never `.lte()`. That is the same convention as the
+ * `tstzrange` the exclusion constraint uses, where a booking reserving until
+ * 15:00 does not clash with one starting at 15:00, and it cannot lose the
+ * last second of the day the way an explicit 23:59:59 does.
+ *
+ * WHY THIS EXISTS. Five screens used to build the day themselves, as
+ * `new Date(`${day}T00:00:00`)`. JavaScript reads a date-time carrying no
+ * offset as LOCAL time — the server's, not the salon's. Vercel runs UTC, so a
+ * New York salon's "23 August" was really 22 Aug 20:00 to 23 Aug 19:59: every
+ * appointment starting after 8pm fell off its own day, and last night's
+ * evening bookings appeared on this morning's grid. Nothing on screen said so,
+ * because the grid draws to 22:00 either way.
+ *
+ * It builds on `salonInstant()`, which already gets the two-lookup dance right
+ * on the two mornings a year the clocks move.
+ */
+export function salonDayRange(
+  dateKey: string,
+  timeZone: string,
+): { from: string; to: string } {
+  return {
+    from: salonInstant(dateKey, "00:00", timeZone),
+    to: salonInstant(nextDay(dateKey), "00:00", timeZone),
+  };
+}
+
+/**
+ * `2026-08-23` becomes `2026-08-24`.
+ *
+ * Calendar arithmetic in UTC, the same trick `salonDaysFrom()` uses: a date is
+ * not a moment, so no timezone offset can push it onto a neighbouring day, and
+ * month and year rollover come free from `Date.UTC`.
+ */
+function nextDay(dateKey: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+}
+
+/**
  * How far into the salon's day an instant falls, in minutes from midnight.
  *
  * What a calendar grid needs: 10:45 in the salon is 645, which at forty pixels

@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { requireProfile } from "@/lib/auth";
-import { salonDateKey, salonDayLabelLong, salonTime } from "@/lib/site/datetime";
+import { can, requireProfile } from "@/lib/auth";
+import {
+  salonDateKey,
+  salonDayLabelLong,
+  salonDayRange,
+  salonTime,
+} from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -42,7 +47,10 @@ export default async function StaffDashboard() {
   const org = await getOrganization();
   const supabase = await createSupabaseServerClient();
 
+  const mayBook = await can("appointment.create");
+
   const today = salonDateKey(new Date(), org.timezone);
+  const { from, to } = salonDayRange(today, org.timezone);
 
   const { data } = await supabase
     .from("appointments")
@@ -52,8 +60,13 @@ export default async function StaffDashboard() {
        service:services (name),
        customer:customers (full_name)`,
     )
-    .gte("starts_at", new Date(`${today}T00:00:00`).toISOString())
-    .lte("starts_at", new Date(`${today}T23:59:59`).toISOString())
+    .gte("starts_at", from)
+    .lt("starts_at", to)
+    /* A row tidied away is a mistake being removed — a double entry, a
+       booking taken against the wrong customer. Every other appointment
+       query in the staff area filters it out, and this one used not to, so
+       the dashboard and the day view disagreed about how busy today was. */
+    .is("deleted_at", null)
     .order("starts_at");
 
   const rows = ((data ?? []) as unknown as Row[]).filter(
@@ -108,13 +121,17 @@ export default async function StaffDashboard() {
         >
           Open the day
         </Link>
-        <span
-          aria-disabled
-          className="cursor-not-allowed border border-line px-6 py-3 text-sm text-ink-muted"
-          title="Not built yet"
-        >
-          Take a booking · soon
-        </span>
+        {/* `nav.ts` dims what is not built so the salon is never taught that
+            pressing things does nothing. This said "soon" long after the form
+            shipped, which teaches the same lesson backwards. */}
+        {mayBook && (
+          <Link
+            href="/staff/book"
+            className="border border-line px-6 py-3 text-sm transition-colors hover:border-ink"
+          >
+            Take a booking
+          </Link>
+        )}
       </div>
 
       <section className="mt-10">

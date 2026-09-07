@@ -3,7 +3,11 @@ import Link from "next/link";
 
 import { can, currentEmployeeId, requireProfile } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
-import { salonDateKey, salonDayLabel } from "@/lib/site/datetime";
+import {
+  salonDateKey,
+  salonDayLabel,
+  salonDayRange,
+} from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -95,23 +99,37 @@ export default async function StaffWeekPage({
     columns.stylists[0]?.id ??
     "";
 
-  const from = new Date(`${days[0]}T00:00:00`);
-  const to = new Date(`${days[6]}T23:59:59`);
+  /* Seven days, from one helper. The half-open range composes: `to` for
+     Saturday is midnight at the start of Sunday, so there is no special case
+     for the last day of the week. */
+  const { from } = salonDayRange(days[0], org.timezone);
+  const { to } = salonDayRange(days[6], org.timezone);
 
-  const { data, error } = await supabase
-    .from("appointments")
-    .select(
-      `id, visit_id, starts_at, ends_at, blocked_until, phase, status, employee_requested,
-       for_name, notes,
-       employee:employees (id, full_name),
-       service:services (name, is_included_with_others),
-       customer:customers (full_name, phone)`,
-    )
-    .eq("employee_id", chosen)
-    .gte("starts_at", from.toISOString())
-    .lte("starts_at", to.toISOString())
-    .is("deleted_at", null)
-    .order("starts_at");
+  /*
+   * No query at all when nobody holds a `lead` row, because there is nobody
+   * to ask about. `employee_id = ''` is a malformed uuid to Postgres, and the
+   * page reported the resulting error as "The week could not be loaded" —
+   * which reads as a fault when the truth is that the matrix is empty.
+   */
+  const result = chosen
+    ? await supabase
+        .from("appointments")
+        .select(
+          `id, visit_id, starts_at, ends_at, blocked_until, phase, status, employee_requested,
+           for_name, notes,
+           employee:employees (id, full_name),
+           service:services (name, is_included_with_others),
+           customer:customers (full_name, phone)`,
+        )
+        .eq("employee_id", chosen)
+        .gte("starts_at", from)
+        .lt("starts_at", to)
+        .is("deleted_at", null)
+        .order("starts_at")
+    : null;
+
+  const data = result?.data ?? [];
+  const error = result?.error ?? null;
 
   /* The column is the salon-local date the appointment falls on — not the
      server's date, which is a different day for part of every evening. */
@@ -144,7 +162,16 @@ export default async function StaffWeekPage({
           {/* A form rather than a dropdown that needs JavaScript — the choice
               belongs in the URL, so a week can be sent to somebody. */}
           <form className="flex items-center gap-2">
-            <input type="hidden" name="date" value={anchor} />
+            {/* A field rather than a hidden value. Arrows walk a week at a
+                time; "the week of the 14th" is one thing somebody says and
+                took four taps to reach. */}
+            <input
+              type="date"
+              name="date"
+              defaultValue={anchor}
+              aria-label="Week beginning"
+              className="border border-line bg-surface px-3 py-2 tabular-nums"
+            />
             <select
               name="employee"
               defaultValue={chosen}
@@ -185,7 +212,18 @@ export default async function StaffWeekPage({
         </div>
       </header>
 
-      {error ? (
+      {!chosen ? (
+        <p className="py-12 text-center text-ink-muted">
+          Nobody is set up to take bookings yet. Tick somebody on{" "}
+          <Link
+            href="/staff/who-does-what"
+            className="underline underline-offset-4 transition-colors hover:text-ink"
+          >
+            who does what
+          </Link>
+          .
+        </p>
+      ) : error ? (
         <p className="text-ink-muted">
           The week could not be loaded. {error.message}
         </p>
