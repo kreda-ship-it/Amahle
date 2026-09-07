@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { can, currentEmployeeId, requireProfile } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
+import { combine, getRota } from "@/lib/appointments/rota";
 import {
   salonDateKey,
   salonDayLabelLong,
@@ -113,13 +114,37 @@ export default async function StaffDayPage({
     }),
   ) as Row[];
 
+  /*
+   * Who is in, per column. The assistants share one, so theirs is combined —
+   * that column is open whenever any of them is, and shading it by one
+   * person's hours would say the salon is shut while somebody is standing in
+   * it.
+   */
+  const rota = await getRota({
+    orgId: org.id,
+    employeeIds: [...columns.stylists, ...columns.support].map((p) => p.id),
+    dateKeys: [day],
+    timezone: org.timezone,
+  });
+
   const heads = [
     ...columns.stylists.map((person) => ({
       id: person.id,
       label: person.full_name,
+      rota: rota.get(`${person.id}|${day}`),
     })),
     ...(columns.support.length > 0
-      ? [{ id: SUPPORT, label: "Assistants" }]
+      ? [
+          {
+            id: SUPPORT,
+            label: "Assistants",
+            rota: combine(
+              columns.support
+                .map((person) => rota.get(`${person.id}|${day}`))
+                .filter((entry) => entry !== undefined),
+            ),
+          },
+        ]
       : []),
   ];
 

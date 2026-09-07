@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { requirePermission } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
+import { combine, getRota } from "@/lib/appointments/rota";
 import {
   salonDateKey,
   salonDayLabel,
@@ -156,10 +157,33 @@ export default async function PlanPage({
     }),
   ) as Row[];
 
+  /* Same rota the live day draws — a plan laid over a day that does not show
+     who is in would propose moves onto people who are not there. */
+  const rota = await getRota({
+    orgId: org.id,
+    employeeIds: [...columns.stylists, ...columns.support].map((p) => p.id),
+    dateKeys: [day],
+    timezone: org.timezone,
+  });
+
   const heads = [
-    ...columns.stylists.map((p) => ({ id: p.id, label: p.full_name })),
+    ...columns.stylists.map((p) => ({
+      id: p.id,
+      label: p.full_name,
+      rota: rota.get(`${p.id}|${day}`),
+    })),
     ...(columns.support.length > 0
-      ? [{ id: SUPPORT, label: "Assistants" }]
+      ? [
+          {
+            id: SUPPORT,
+            label: "Assistants",
+            rota: combine(
+              columns.support
+                .map((p) => rota.get(`${p.id}|${day}`))
+                .filter((entry) => entry !== undefined),
+            ),
+          },
+        ]
       : []),
   ];
 

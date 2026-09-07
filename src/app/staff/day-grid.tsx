@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import type { ColumnRota } from "@/lib/appointments/rota";
 import { statusMeta, type StatusKey } from "@/lib/appointments/status";
 import { salonMinutes, salonTime } from "@/lib/site/datetime";
 
@@ -75,8 +76,16 @@ export type Row = {
 
 type Props = {
   rows: Row[];
-  /** In the order they are drawn, left to right. */
-  columns: { id: string; label: string }[];
+  /*
+   * In the order they are drawn, left to right.
+   *
+   * `rota` is when this column is OPEN, worked out on the server because it
+   * needs the salon's timezone and the grid deliberately knows nothing about
+   * what a column means. Leave it off and nothing is shaded — which is what
+   * a screen that has not been taught about rotas should do, rather than
+   * drawing the whole day as closed.
+   */
+  columns: { id: string; label: string; rota?: ColumnRota }[];
   timezone: string;
   /** May drag, reassign and resize. `appointment.manage`. */
   canManage: boolean;
@@ -196,6 +205,35 @@ const TOUCH_DRAG_THRESHOLD = 12;
    every render rather than a fresh one that rebuilds the day below it. */
 const NOTHING_PENDING: Record<string, string> = {};
 const NOTHING_PLANNED: Record<string, number> = {};
+
+/**
+ * The parts of the drawn day this column is NOT open for.
+ *
+ * The complement of the working stretches, clipped to the grid. Returning the
+ * whole day when a rota is missing would paint every screen that has not been
+ * taught about rotas as permanently shut, so an ABSENT rota shades nothing and
+ * an EMPTY one — a real answer, meaning nobody works this day — shades all of
+ * it. Those are different facts and `undefined` is what tells them apart.
+ */
+function closedSpans(rota: ColumnRota | undefined): { from: number; to: number }[] {
+  if (!rota) return [];
+  if (rota.working.length === 0) return [{ from: DAY_START, to: DAY_END }];
+
+  const out: { from: number; to: number }[] = [];
+  let cursor = DAY_START;
+
+  for (const span of rota.working) {
+    if (span.from > cursor) {
+      out.push({ from: cursor, to: Math.min(span.from, DAY_END) });
+    }
+
+    cursor = Math.max(cursor, span.to);
+  }
+
+  if (cursor < DAY_END) out.push({ from: cursor, to: DAY_END });
+
+  return out.filter((span) => span.to > span.from);
+}
 
 /** A block, once it knows where it sits and who it shares the space with. */
 type Placed = {
@@ -1379,6 +1417,65 @@ export function DayGrid({
                 className="relative border-r border-line last:border-r-0"
                 style={{ height: gridHeight }}
               >
+                {/*
+                  WHEN NOBODY IS IN. Drawn before anything else, so hour lines
+                  and blocks sit on top of it.
+
+                  An empty column used to mean two different things — free, or
+                  not here — and the grid drew them identically. A shaded
+                  stretch is the difference between "Fikir has a gap at two"
+                  and "Fikir is not in on Tuesdays", which is the question the
+                  desk is actually asking when it looks at a blank column.
+
+                  Nothing is BLOCKED by this. Staff may book outside the rota
+                  deliberately — create_appointment() lets a staff booking past
+                  it, and DECISIONS #30 says the rota only ever governs what
+                  customers are OFFERED. So this is information, not a fence.
+                */}
+                {closedSpans(head.rota).map((span, index) => (
+                  <div
+                    key={`closed-${index}`}
+                    aria-hidden
+                    title="Nobody is working then"
+                    className="absolute inset-x-0 bg-surface-sunk"
+                    style={{
+                      top: ((span.from - DAY_START) / 60) * pxPerHour,
+                      height: ((span.to - span.from) / 60) * pxPerHour,
+                    }}
+                  />
+                ))}
+
+                {/* Time off reads differently from simply closed — one is the
+                    ordinary shape of a week, the other is a person who would
+                    normally be here and is not. */}
+                {(head.rota?.off ?? []).map((span, index) => {
+                  const top = ((Math.max(span.from, DAY_START) - DAY_START) / 60) * pxPerHour;
+                  const height =
+                    ((Math.min(span.to, DAY_END) - Math.max(span.from, DAY_START)) / 60) *
+                    pxPerHour;
+
+                  if (height <= 0) return null;
+
+                  return (
+                    <div
+                      key={`off-${index}`}
+                      aria-hidden
+                      title="Away"
+                      className="absolute inset-x-0 flex items-start justify-center overflow-hidden"
+                      style={{
+                        top,
+                        height,
+                        background:
+                          "repeating-linear-gradient(45deg, var(--surface-sunk) 0 6px, transparent 6px 12px)",
+                      }}
+                    >
+                      {height > 28 && (
+                        <span className="label mt-1 text-ink-muted">Away</span>
+                      )}
+                    </div>
+                  );
+                })}
+
                 {/* Hour lines only. Half-hours turn the column into a ladder
                     at the smaller zooms and the blocks stop standing out
                     from it. */}

@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { can, currentEmployeeId, requireProfile } from "@/lib/auth";
 import { getDayColumns } from "@/lib/appointments/columns";
+import { getRota } from "@/lib/appointments/rota";
 import {
   salonDateKey,
   salonDayLabel,
@@ -140,9 +141,21 @@ export default async function StaffWeekPage({
     }),
   ) as Row[];
 
+  /* One person across seven days, so the rota is asked the other way round —
+     same function, a different slice of the same answer. */
+  const rota = chosen
+    ? await getRota({
+        orgId: org.id,
+        employeeIds: [chosen],
+        dateKeys: days,
+        timezone: org.timezone,
+      })
+    : new Map();
+
   const heads = days.map((day) => ({
     id: day,
     label: `${salonDayLabel(day)}${day === today ? " · today" : ""}`,
+    rota: rota.get(`${chosen}|${day}`),
   }));
 
   const everyone = [...columns.stylists, ...columns.support];
