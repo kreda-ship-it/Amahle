@@ -5,7 +5,8 @@ import { getServiceTree, groupServices } from "@/lib/services/categories";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-import { ServiceRow, type ServiceRowData } from "./service-row";
+import { ServiceList, type Section } from "./service-list";
+import { type ServiceRowData } from "./service-row";
 
 /**
  * The menu.
@@ -82,8 +83,7 @@ export default async function ServicesPage() {
   const tree = await getServiceTree(org.id);
   const { groups, unfiled } = groupServices(services, tree);
 
-  const sections: { key: string; heading: string; list: ServiceRowData[] }[] =
-    [];
+  const sections: Section[] = [];
 
   for (const group of groups) {
     if (group.direct.length > 0) {
@@ -126,29 +126,17 @@ export default async function ServicesPage() {
       ) : services.length === 0 ? (
         <p className="text-ink-muted">No services yet.</p>
       ) : (
-        sections.map((section) => (
-          <section key={section.key} className="border border-line">
-            <h2 className="border-b border-line bg-surface-sunk px-4 py-2.5 font-medium">
-              {section.heading}
-              <span className="ml-2 text-sm font-normal text-ink-muted">
-                {section.list.length}
-              </span>
-            </h2>
-
-            <ul className="divide-y divide-line">
-              {section.list.map((service) => (
-                <ServiceRow
-                  key={service.id}
-                  service={service}
-                  currency={org.currency}
-                  defaultBuffer={
-                    typeof defaultBuffer === "number" ? defaultBuffer : null
-                  }
-                />
-              ))}
-            </ul>
-          </section>
-        ))
+        /* The grouping is worked out here, on the server, and handed over as
+           plain data. The list is a client component for one reason — a
+           search box is state — and it is given the menu rather than the
+           query that produced it. */
+        <ServiceList
+          sections={sections}
+          currency={org.currency}
+          defaultBuffer={
+            typeof defaultBuffer === "number" ? defaultBuffer : null
+          }
+        />
       )}
     </div>
   );
