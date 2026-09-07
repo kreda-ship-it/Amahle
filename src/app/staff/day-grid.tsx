@@ -1283,6 +1283,58 @@ export function DayGrid({
     return () => clearTimeout(timer);
   }, [undoMove]);
 
+  /*
+   * KEEPING THE DAY CURRENT ON ITS OWN.
+   *
+   * Every calendar screen is `force-dynamic`, which was only ever half the
+   * job: it stops Next serving a cached day, and then the page never changes
+   * again until somebody navigates. On a Saturday the desk tablet and the
+   * owner's laptop drift apart within minutes, and a drag on a stale view
+   * moves an appointment that is no longer where it is drawn.
+   *
+   * POLLING RATHER THAN REALTIME, and it is a deliberate second choice.
+   * Supabase's realtime would be instant and cheaper, and it needs
+   * `appointments` added to the `supabase_realtime` publication — a migration,
+   * and migrations are blocked on a CLI login. This works today, needs no
+   * schema change, and is a straight swap for realtime later. The comment is
+   * here so the swap is obviously available rather than forgotten.
+   *
+   * NEVER WHILE SOMEBODY IS WORKING. A refresh mid-drag would pull the day out
+   * from under a gesture; a refresh mid-save would race the write that is
+   * already in flight; a refresh while an undo strip is showing would take
+   * away the only route back. The flag is a ref rather than a dependency so
+   * the interval is not torn down and rebuilt on every frame of a drag.
+   *
+   * ON FOCUS AS WELL AS ON A TIMER, and the focus half is the valuable one.
+   * Coming back to a tablet that has been face-down on the counter is exactly
+   * when the day is most stale and most likely to be trusted.
+   */
+  const busy = useRef(false);
+
+  useEffect(() => {
+    busy.current =
+      drag !== null || saving || undoable !== null || undoMove !== null;
+  });
+
+  useEffect(() => {
+    function refreshIfIdle() {
+      if (document.hidden || busy.current) return;
+
+      router.refresh();
+    }
+
+    const timer = setInterval(refreshIfIdle, 30_000);
+
+    window.addEventListener("focus", refreshIfIdle);
+    document.addEventListener("visibilitychange", refreshIfIdle);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refreshIfIdle);
+      document.removeEventListener("visibilitychange", refreshIfIdle);
+    };
+  }, [router]);
+
   function undoTheMove() {
     if (!undoMove) return;
 
