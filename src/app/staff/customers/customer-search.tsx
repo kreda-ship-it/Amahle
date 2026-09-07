@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 
 import type { CustomerMatch } from "@/lib/customers/find";
@@ -134,7 +135,12 @@ export function CustomerSearch({ recent, timezone }: Props) {
               key={customer.id}
               className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-3"
             >
-              <span className="font-medium">{customer.full_name}</span>
+              <Link
+                href={`/staff/customers/${customer.id}`}
+                className="font-medium underline underline-offset-4 transition-colors hover:text-brand"
+              >
+                {customer.full_name}
+              </Link>
 
               {/* Tappable, because the reason to look somebody up at a front
                   desk is very often to ring them. */}

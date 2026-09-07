@@ -31,7 +31,13 @@ const LOCALE = "en-US";
  * No trailing `.00`, because a price list full of them reads like a receipt.
  * Real cents still print, so nothing is silently rounded away.
  */
-function formatMoney(amount: number, currency: string): string {
+/*
+ * Exported since 2026-09-07 for money that has already been charged — a
+ * customer's visit history, a total spent. `formatPrice()` below is about how
+ * a MENU shows a price, and "from" and "hidden" are meaningless once the money
+ * has changed hands. An amount on a receipt is exact by definition.
+ */
+export function formatMoney(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(LOCALE, {
       style: "currency",
