@@ -428,6 +428,25 @@ export function DayGrid({
     [rows],
   );
 
+  /*
+   * The same idea for WHERE things are, rather than what they say.
+   *
+   * A drag sets an optimistic offset so the block stays where it was dropped
+   * while the write is in flight. That offset was cleared when the database
+   * refused and never when it agreed — so once the new rows arrived carrying
+   * the new time, the offset applied a SECOND time and the block drew at
+   * double the distance it had been dragged.
+   *
+   * It went unnoticed because a refresh only happened when somebody navigated.
+   * Anything that reloads the day on its own makes it permanent, which is why
+   * this is fixed before live refresh rather than alongside it.
+   */
+  const shapeKey = useMemo(
+    () =>
+      rows.map((row) => `${row.id}:${row.starts_at}:${row.ends_at}`).join(","),
+    [rows],
+  );
+
   const [pendingFor, setPendingFor] = useState<{
     key: string;
     map: Record<string, string>;
@@ -518,7 +537,25 @@ export function DayGrid({
   }
 
   /** A length change sent and not yet returned, in minutes. */
-  const [resized, setResized] = useState<Record<string, number>>({});
+  const [resizedFor, setResizedFor] = useState<{
+    key: string;
+    map: Record<string, number>;
+  } | null>(null);
+
+  const resized =
+    resizedFor?.key === shapeKey ? resizedFor.map : NOTHING_PLANNED;
+
+  function rememberResize(rowId: string, minutes: number | null) {
+    setResizedFor((current) => {
+      const base = current?.key === shapeKey ? current.map : {};
+      const next = { ...base };
+
+      if (minutes === null) delete next[rowId];
+      else next[rowId] = minutes;
+
+      return { key: shapeKey, map: next };
+    });
+  }
 
   /*
    * UNDO AND REDO, IN PLANNING MODE ONLY, and the asymmetry is the point.
@@ -664,8 +701,35 @@ export function DayGrid({
     if (touches.current.size < 2) pinch.current = null;
   }
 
-  /** A move that has been sent but not yet come back, so the block stays put. */
-  const [moved, setMoved] = useState<Record<string, number>>({});
+  /**
+   * A move sent and not yet come back, so the block stays where it was
+   * dropped rather than snapping back for one frame.
+   *
+   * Stored WITH the arrangement it was measured against. When the rows change
+   * — the write landed, or somebody else moved something — the key no longer
+   * matches and the offset is simply not this day's answer any more. Same
+   * shape as `pendingFor` above, and it means nothing has to remember to clear
+   * it.
+   */
+  const [movedFor, setMovedFor] = useState<{
+    key: string;
+    map: Record<string, number>;
+  } | null>(null);
+
+  const moved = movedFor?.key === shapeKey ? movedFor.map : NOTHING_PLANNED;
+
+  /** Add to, or drop from, the offsets measured against the current shape. */
+  function rememberMove(visitId: string, minutes: number | null) {
+    setMovedFor((current) => {
+      const base = current?.key === shapeKey ? current.map : {};
+      const next = { ...base };
+
+      if (minutes === null) delete next[visitId];
+      else next[visitId] = minutes;
+
+      return { key: shapeKey, map: next };
+    });
+  }
 
   /*
    * Where the plan wants each visit, as an offset in minutes from where the
@@ -1020,7 +1084,7 @@ export function DayGrid({
       if (shift === 0 || !row) return;
 
       setError(null);
-      setResized((current) => ({ ...current, [rowId]: shift }));
+      rememberResize(rowId, shift);
 
       const minutes =
         Math.round(
@@ -1058,13 +1122,7 @@ export function DayGrid({
         const result = await resizeAppointment(rowId, endsAt);
 
         if (!result.ok) {
-          setResized((current) => {
-            const next = { ...current };
-            delete next[rowId];
-
-            return next;
-          });
-
+          rememberResize(rowId, null);
           setError(result.message);
         }
       });
@@ -1132,7 +1190,7 @@ export function DayGrid({
     /* The optimistic offset is the WITHIN-day part only. A cross-day move
        corrects itself when the new rows arrive, and showing it a day down in
        the meantime is the glitch this whole change is about. */
-    setMoved((current) => ({ ...current, [visitId]: shift }));
+    rememberMove(visitId, shift);
 
     /*
      * IN PLANNING MODE NOTHING REACHES THE CALENDAR. The same gesture writes a
@@ -1184,13 +1242,7 @@ export function DayGrid({
           });
 
           if (!result.ok) {
-            setMoved((current) => {
-              const next = { ...current };
-              delete next[visitId];
-
-              return next;
-            });
-
+            rememberMove(visitId, null);
             setError(result.message);
             return;
           }
@@ -1206,13 +1258,7 @@ export function DayGrid({
       if (!result.ok) {
         // Put it back where it was — the database refused, so the block must
         // not sit somewhere it is not.
-        setMoved((current) => {
-          const next = { ...current };
-          delete next[visitId];
-
-          return next;
-        });
-
+        rememberMove(visitId, null);
         setError(result.message);
         return;
       }
@@ -1244,10 +1290,7 @@ export function DayGrid({
     setUndoMove(null);
     setError(null);
 
-    setMoved((current) => ({
-      ...current,
-      [visitId]: (current[visitId] ?? 0) + shift,
-    }));
+    rememberMove(visitId, (moved[visitId] ?? 0) + shift);
 
     startSaving(async () => {
       const result = await moveVisit(visitId, shift);
