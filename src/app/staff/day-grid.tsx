@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import { STATUSES, statusMeta, type StatusKey } from "@/lib/appointments/status";
+import { statusMeta, type StatusKey } from "@/lib/appointments/status";
 import { salonMinutes, salonTime } from "@/lib/site/datetime";
 
 import {
@@ -14,6 +14,7 @@ import {
   type StatusChange,
 } from "./actions";
 import { DatePicker } from "./date-picker";
+import { StatusPanel } from "./status-panel";
 import { dropPlannedMove, setPlannedMove } from "./plan-actions";
 
 /**
@@ -1054,64 +1055,27 @@ export function DayGrid({
     });
   }
 
-  const statusKey = (
-    <>
-      {/* ---------- the key, which is also the highlighter ---------- */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {canMark && (
-          <span className="label w-full text-ink-muted">
-            {brush ? "Tap a booking to mark it" : "Pick a status to mark with"}
-          </span>
-        )}
-
-        {STATUSES.map((status) => {
-          const active = brush === status.key;
-
-          return (
-            <button
-              key={status.key}
-              type="button"
-              disabled={!canMark}
-              aria-pressed={canMark ? active : undefined}
-              onClick={() => setBrush(active ? null : status.key)}
-              className={`flex items-center gap-2 border px-2 py-1 text-sm transition-colors ${
-                active
-                  ? "border-ink bg-surface-sunk"
-                  : "border-transparent hover:border-line"
-              } ${canMark ? "" : "cursor-default"}`}
-            >
-              {/* The mark carries the colour; the word carries the meaning.
-                  Around one man in twelve cannot reliably separate red from
-                  green, so colour is never asked to say anything alone. */}
-              <span
-                aria-hidden
-                className="size-3 shrink-0"
-                style={{ background: `var(${status.token})` }}
-              />
-              {status.label}
-            </button>
-          );
-        })}
-      </div>
-    </>
-  );
-
   return (
     <div className="flex flex-col gap-4 xl:flex-row-reverse xl:items-start">
       {/*
-        The calendar and the key together, in one panel. Both are things you
-        consult rather than work in, and each was previously taking a full-
-        width row from a screen whose whole problem is width.
+        THE RAIL — the things you consult rather than work in.
+
+        Two panels that fold independently, and they used to be one. The key
+        was rendered INSIDE the calendar, which was defensible until the
+        calendar learned to stay folded: its collapsed state is a single date
+        chip and nothing else, so hiding the calendar hid the highlighter with
+        it, permanently. Marking a day and looking one up are different jobs.
+
+        Wrapping below xl so two chips sit side by side rather than stacking
+        two mostly-empty rows above a grid that wants the height.
       */}
-      {pickerDate && today ? (
-        <DatePicker
-          selected={pickerDate}
-          today={today}
-          statusKey={statusKey}
-        />
-      ) : (
-        <div className="xl:w-[17rem] xl:shrink-0">{statusKey}</div>
-      )}
+      <div className="flex flex-wrap items-start gap-3 xl:w-[17rem] xl:shrink-0 xl:flex-col">
+        {pickerDate && today && (
+          <DatePicker selected={pickerDate} today={today} />
+        )}
+
+        <StatusPanel canMark={canMark} brush={brush} onBrush={setBrush} />
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-3">
 
@@ -1221,6 +1185,11 @@ export function DayGrid({
             block is the pane. Identical `gridTemplateColumns` on both keeps
             the two in step, which is why the template is computed once above.
           */}
+          {/* z-30 IS THE CEILING FOR ANYTHING INSIDE A SCREEN. The staff
+              shell's drawer and its dimmer sit at z-50 and z-40, so a sticky
+              heading can never paint over the navigation again — which is
+              what happened when both were z-30 and this one won on document
+              order. Do not raise this number; raise the shell's. */}
           <div
             className="sticky top-0 z-30 grid bg-surface"
             style={{ gridTemplateColumns: template }}

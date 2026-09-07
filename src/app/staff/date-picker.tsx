@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { useRemembered } from "./remembered";
+
 /**
  * The little calendar in the corner.
  *
@@ -26,16 +28,6 @@ type Props = {
   selected: string;
   /** The salon's today, which is not necessarily the browser's. */
   today: string;
-  /*
-   * The status key, rendered underneath the dates.
-   *
-   * It lives here rather than above the grid because both are the same kind
-   * of thing — a small panel you consult rather than work in — and because
-   * the row it used to occupy was a row of the calendar's width taken from
-   * the columns. Passed in rather than built here: the key is also the
-   * highlighter, and which statuses it offers is the grid's business.
-   */
-  statusKey?: React.ReactNode;
 };
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -100,10 +92,21 @@ function shiftMonth(year: number, month: number, by: number) {
   return { year: when.getUTCFullYear(), month: when.getUTCMonth() + 1 };
 }
 
-export function DatePicker({ selected, today, statusKey }: Props) {
+export function DatePicker({ selected, today }: Props) {
   const [selYear, selMonth] = parts(selected);
   const [shape, setShape] = useState<"month" | "week">("month");
-  const [shown, setShown] = useState(true);
+
+  /*
+   * Folded or not, REMEMBERED. This was `useState`, so every move to another
+   * day sprang the calendar open again — and moving to another day is the
+   * action that follows folding it away. Two hundred and fifty pixels of the
+   * grid, taken back on every navigation.
+   *
+   * The shape — month or week — is deliberately not remembered. It is a
+   * choice about the search you are doing right now, not a standing
+   * preference, and month is the right thing to open on.
+   */
+  const [shown, setShown] = useRemembered("staff-calendar-shown", true);
   const [view, setView] = useState({ year: selYear, month: selMonth });
 
   const week = weekOf(selected);
@@ -250,9 +253,6 @@ export function DatePicker({ selected, today, statusKey }: Props) {
         </span>
       </div>
 
-      {statusKey && (
-        <div className="mt-2 border-t border-line pt-2">{statusKey}</div>
-      )}
     </div>
   );
 }
