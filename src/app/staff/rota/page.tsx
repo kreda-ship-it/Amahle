@@ -6,6 +6,7 @@ import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 import { RotaEditor, type Shift } from "./rota-editor";
+import { TimeOffEditor, type TimeOff } from "./time-off";
 
 /**
  * Who works when.
@@ -21,9 +22,12 @@ import { RotaEditor, type Shift } from "./rota-editor";
  * across ten people is a spreadsheet, and a spreadsheet is what this is
  * replacing.
  *
- * TIME OFF IS NOT HERE YET. A holiday is a real moment rather than a fact
- * about the clock — a different table, a different shape of form, and its own
- * screen rather than a second half bolted onto this one.
+ * TIME OFF IS HERE TOO, having first been argued into a screen of its own.
+ * The tables really are different — a rota is a fact about the clock, a
+ * holiday is a real moment — but that is a reason for two TABLES, not two
+ * screens. "When is Fikir available" is one question, and answering half of it
+ * here and half elsewhere would mean the same employee picker twice and two
+ * places to check before booking somebody.
  */
 
 export const metadata: Metadata = {
@@ -51,16 +55,30 @@ export default async function RotaPage({
 
   const chosen = params.employee ?? everyone[0]?.id ?? "";
 
-  const { data } = chosen
-    ? await supabase
-        .from("employee_working_hours")
-        .select("id, day_of_week, start_time, end_time")
-        .eq("org_id", org.id)
-        .eq("employee_id", chosen)
-        .is("deleted_at", null)
-        .order("day_of_week")
-        .order("start_time")
-    : { data: [] };
+  const [{ data }, { data: away }] = chosen
+    ? await Promise.all([
+        supabase
+          .from("employee_working_hours")
+          .select("id, day_of_week, start_time, end_time")
+          .eq("org_id", org.id)
+          .eq("employee_id", chosen)
+          .is("deleted_at", null)
+          .order("day_of_week")
+          .order("start_time"),
+
+        /* Only what is still to come. A rota screen is for deciding what
+           happens next; last August's holiday is history, and history lives
+           in the audit log rather than in a list to scroll past. */
+        supabase
+          .from("employee_time_off")
+          .select("id, starts_at, ends_at")
+          .eq("org_id", org.id)
+          .eq("employee_id", chosen)
+          .gte("ends_at", new Date().toISOString())
+          .is("deleted_at", null)
+          .order("starts_at"),
+      ])
+    : [{ data: [] }, { data: [] }];
 
   const person = everyone.find((one) => one.id === chosen);
 
@@ -108,7 +126,15 @@ export default async function RotaPage({
           Nobody is on the team yet.
         </p>
       ) : (
-        <RotaEditor employeeId={chosen} shifts={(data ?? []) as Shift[]} />
+        <div className="flex flex-col gap-8">
+          <RotaEditor employeeId={chosen} shifts={(data ?? []) as Shift[]} />
+
+          <TimeOffEditor
+            employeeId={chosen}
+            away={(away ?? []) as TimeOff[]}
+            timezone={org.timezone}
+          />
+        </div>
       )}
 
       <p className="text-sm text-ink-muted">

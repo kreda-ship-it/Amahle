@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requirePermission } from "@/lib/auth";
+import { salonDayRange, salonInstant } from "@/lib/site/datetime";
 import { getOrganization } from "@/lib/site/organization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -142,6 +143,105 @@ export async function removeShift(id: string): Promise<RotaResult> {
   if (error) {
     console.error("removeShift failed", error);
     return { ok: false, message: "That shift could not be removed." };
+  }
+
+  revalidatePath("/staff/rota");
+  revalidatePath("/staff/day");
+  revalidatePath("/staff/week");
+
+  return { ok: true };
+}
+
+/**
+ * Somebody is away.
+ *
+ * `timestamptz` here, unlike the rota above, and the difference is the whole
+ * reason this is a separate table. A rota is a fact about the CLOCK — "Tuesday
+ * 9am" stays 9am through a daylight saving change. A holiday is a real
+ * MOMENT, and the 14th of March is the 14th of March.
+ *
+ * So the form takes dates in the salon's own terms and the conversion happens
+ * HERE, on the server, using the organization's timezone — never in the
+ * browser, which does not know it and would be wrong for anybody checking the
+ * rota from another state.
+ *
+ * WHOLE DAYS WHEN NO TIME IS GIVEN, because that is nearly every case: a
+ * holiday, a sick day, a wedding. `salonDayRange()` gives midnight to midnight
+ * in the salon's clock, and its half-open end means "the 14th to the 16th"
+ * runs to the start of the 17th — the 16th included, which is what somebody
+ * means when they say it. Times are there for the dentist at two o'clock.
+ */
+export async function addTimeOff(input: {
+  employeeId: string;
+  fromDate: string;
+  toDate: string;
+  /** Blank means the whole day. */
+  fromTime: string;
+  toTime: string;
+}): Promise<RotaResult> {
+  await requirePermission("employee.record.manage");
+
+  if (!input.fromDate || !input.toDate) {
+    return { ok: false, message: "Both dates are needed." };
+  }
+
+  const org = await getOrganization();
+
+  const startsAt = input.fromTime
+    ? salonInstant(input.fromDate, input.fromTime, org.timezone)
+    : salonDayRange(input.fromDate, org.timezone).from;
+
+  const endsAt = input.toTime
+    ? salonInstant(input.toDate, input.toTime, org.timezone)
+    : salonDayRange(input.toDate, org.timezone).to;
+
+  if (endsAt <= startsAt) {
+    return { ok: false, message: "The end has to be after the start." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  const { error } = await supabase.from("employee_time_off").insert({
+    org_id: org.id,
+    employee_id: input.employeeId,
+    starts_at: startsAt,
+    ends_at: endsAt,
+  });
+
+  if (error) {
+    console.error("addTimeOff failed", error);
+    return { ok: false, message: "That could not be added." };
+  }
+
+  revalidatePath("/staff/rota");
+  revalidatePath("/staff/day");
+  revalidatePath("/staff/week");
+
+  return { ok: true };
+}
+
+/**
+ * They are not away after all.
+ *
+ * Soft, like the rest. **This does not free any appointment that was booked
+ * around it** — nothing was blocked in the first place, because time off is
+ * not an appointment and the exclusion constraint never saw it. It only ever
+ * governed what customers were OFFERED, per DECISIONS #30.
+ */
+export async function removeTimeOff(id: string): Promise<RotaResult> {
+  await requirePermission("employee.record.manage");
+
+  const supabase = await createSupabaseServerClient();
+
+  const { error } = await supabase
+    .from("employee_time_off")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("deleted_at", null);
+
+  if (error) {
+    console.error("removeTimeOff failed", error);
+    return { ok: false, message: "That could not be removed." };
   }
 
   revalidatePath("/staff/rota");
