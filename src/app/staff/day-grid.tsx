@@ -172,10 +172,25 @@ function snapFor(pxPerHour: number): number {
   return 15;
 }
 
-/* Pixels of movement before a press becomes a drag rather than a tap. Without
-   it, marking with the highlighter would move appointments by a minute or two
-   whenever a finger wobbled. */
+/**
+ * Pixels of movement before a press becomes a drag rather than a tap.
+ *
+ * TWO NUMBERS, BECAUSE A FINGER IS NOT A MOUSE. A mouse sits exactly where it
+ * is put, so four pixels is already deliberate. A finger does not: pressing a
+ * touchscreen and lifting off moves several pixels every time, simply from the
+ * contact patch changing shape as the pressure goes on and comes off.
+ *
+ * At four pixels for both, tapping an appointment on the salon's tablet — to
+ * read it, or having meant to pick a status first — moved it. Nobody wants a
+ * calendar where looking at something changes it, and the person it happens to
+ * has no idea what they did.
+ *
+ * Twelve is roughly what native touch UIs use to tell a tap from a pan. It is
+ * a fifth of a finger pad, and small enough that a drag still starts the
+ * moment it is meant.
+ */
 const DRAG_THRESHOLD = 4;
+const TOUCH_DRAG_THRESHOLD = 12;
 
 /* One shared empty object, so "nothing is pending" is the same reference on
    every render rather than a fresh one that rebuilds the day below it. */
@@ -386,9 +401,27 @@ export function DayGrid({
     fromX: number;
     fromY: number;
     fromColumn: string;
+    /** Mouse, pen or finger — it decides how far is far enough. */
+    pointerType: string;
+    /*
+     * Minutes WITHIN the day. Crossing a column on a week view is a change of
+     * day and is NOT folded in here — it used to be, and a block dragged one
+     * column sideways flew twenty-four hours down the grid before it landed.
+     * `dragEnd` adds the days back for the write.
+     */
     shift: number;
-    /** Columns crossed. Only meaningful where a column is a person. */
+    /** Columns crossed, clamped to the columns that exist. */
     across: number;
+    /*
+     * One column, in pixels, measured when the drag starts moving.
+     *
+     * The preview used to slide by `translateX(across * 100%)`, and a
+     * percentage translate is a percentage of the ELEMENT — which is
+     * `calc(100%/lanes - 4px)` of a column. So one appointment slid four
+     * pixels short of its target and two overlapping ones slid half a column.
+     * Pixels are the only unit that means the same thing to every block.
+     */
+    columnWidth: number;
     moved: boolean;
     /** A pull on the bottom edge changes the length instead of the time. */
     resizing: boolean;
@@ -738,8 +771,10 @@ export function DayGrid({
       fromX: event.clientX,
       fromY: event.clientY,
       fromColumn: row.column_id,
+      pointerType: event.pointerType,
       shift: 0,
       across: 0,
+      columnWidth: 0,
       moved: false,
       resizing,
     });
@@ -751,16 +786,68 @@ export function DayGrid({
     const dx = event.clientX - drag.fromX;
     const dy = event.clientY - drag.fromY;
 
-    if (
-      !drag.moved &&
-      Math.abs(dx) < DRAG_THRESHOLD &&
-      Math.abs(dy) < DRAG_THRESHOLD
-    ) {
+    if (!drag.moved) {
+      const enough =
+        drag.pointerType === "touch" ? TOUCH_DRAG_THRESHOLD : DRAG_THRESHOLD;
+
+      if (Math.abs(dx) < enough && Math.abs(dy) < enough) return;
+
+      /*
+       * Recognised as a drag — and the anchor moves to HERE rather than
+       * staying where the finger landed.
+       *
+       * Without this the block jumps by the whole threshold the instant it
+       * starts following: twelve pixels of movement nobody made, which at a
+       * fifteen-minute snap is a quarter of an hour appearing out of nowhere.
+       * The bigger the threshold, the worse the jump — so raising it without
+       * re-anchoring would have traded one wrong move for another.
+       *
+       * Nothing is computed on this frame. The next pointermove measures from
+       * the new anchor and the block starts at zero, which is what makes the
+       * gesture feel like it begins where you decided it did.
+       */
+      setDrag({
+        ...drag,
+        moved: true,
+        fromX: event.clientX,
+        fromY: event.clientY,
+        shift: 0,
+        across: 0,
+      });
+
       return;
     }
 
-    const minutes = (dy / pxPerHour) * 60;
     const snap = snapFor(pxPerHour);
+    const row = rows.find((candidate) => candidate.id === drag.rowId);
+
+    /*
+     * NOTHING LEAVES THE TABLE. Both axes are clamped to what the grid can
+     * actually show, because an absolutely-placed block does not stop at the
+     * edge of its column — it simply carries on into the page, and a booking
+     * floating over the toolbar reads as a bug rather than as a gesture that
+     * has run out of room.
+     *
+     * Clamped here rather than at render, so the number the block SHOWS and
+     * the number that gets written are the same one. Clamping only the
+     * drawing would land the appointment somewhere it was never seen.
+     */
+    let shift = Math.round(((dy / pxPerHour) * 60) / snap) * snap;
+
+    if (row) {
+      const from = salonMinutes(row.starts_at, timezone);
+      let to = salonMinutes(row.ends_at, timezone);
+
+      /* Past midnight reads as an earlier minute; treat it as the foot of the
+         grid, exactly as `place()` does. */
+      if (to <= from) to = DAY_END;
+
+      shift = drag.resizing
+        ? /* A pull on the edge may not shrink past nothing, and may not push
+             the end below the grid. */
+          Math.min(Math.max(shift, snap - (to - from)), DAY_END - to)
+        : Math.min(Math.max(shift, DAY_START - from), DAY_END - to);
+    }
 
     /*
      * Sideways only counts where a column is a date — then crossing one is a
@@ -783,29 +870,30 @@ export function DayGrid({
      * A resize ignores sideways entirely. Pulling an edge changes a length,
      * and a length has no column.
      */
-    let days = 0;
     let across = 0;
+    let columnWidth = drag.columnWidth;
 
     if (!drag.resizing && gridRef.current) {
       /* gridRef now holds the COLUMNS ONLY — the gutter is its sibling, not
          its first track — so there is no longer 52px of clock to subtract. */
-      const columnWidth =
-        gridRef.current.clientWidth / Math.max(columns.length, 1);
+      columnWidth = gridRef.current.clientWidth / Math.max(columns.length, 1);
 
       if (columnWidth > 0) {
-        const crossed = Math.round(dx / columnWidth);
+        const fromIndex = columns.findIndex(
+          (column) => column.id === drag.fromColumn,
+        );
 
-        if (columnKind === "date") days = crossed;
-        else across = crossed;
+        /* Clamped to the columns that exist. Dragging left from the first
+           stylist used to slide the block off the side of the table and hold
+           it there until you let go. */
+        across = Math.min(
+          Math.max(Math.round(dx / columnWidth), -fromIndex),
+          columns.length - 1 - fromIndex,
+        );
       }
     }
 
-    setDrag({
-      ...drag,
-      moved: true,
-      across,
-      shift: Math.round(minutes / snap) * snap + days * 24 * 60,
-    });
+    setDrag({ ...drag, moved: true, across, columnWidth, shift });
   }
 
   function dragEnd() {
@@ -813,6 +901,15 @@ export function DayGrid({
 
     const { visitId, rowId, shift, across, moved: didMove, resizing } = drag;
     setDrag(null);
+
+    /*
+     * On a week a column IS a day, so crossing one is a day's worth of
+     * minutes. Added here rather than carried in `shift`, because `shift` is
+     * what the preview draws with — and a block that dropped twenty-four
+     * hours down the grid on its way to tomorrow was the old behaviour.
+     */
+    const totalShift =
+      columnKind === "date" ? shift + across * 24 * 60 : shift;
 
     if (!didMove) return;
 
@@ -929,9 +1026,12 @@ export function DayGrid({
       return;
     }
 
-    if (shift === 0) return;
+    if (totalShift === 0) return;
 
     setError(null);
+    /* The optimistic offset is the WITHIN-day part only. A cross-day move
+       corrects itself when the new rows arrive, and showing it a day down in
+       the meantime is the glitch this whole change is about. */
     setMoved((current) => ({ ...current, [visitId]: shift }));
 
     /*
@@ -957,7 +1057,7 @@ export function DayGrid({
 
           const before = plan.moves[member.id] ?? null;
           const after = {
-            startsAt: shifted(member.starts_at, already + shift),
+            startsAt: shifted(member.starts_at, already + totalShift),
             employeeId: before?.employeeId ?? null,
             minutes: before?.minutes ?? null,
           };
@@ -1001,7 +1101,7 @@ export function DayGrid({
     }
 
     startSaving(async () => {
-      const result = await moveVisit(visitId, shift);
+      const result = await moveVisit(visitId, totalShift);
 
       if (!result.ok) {
         // Put it back where it was — the database refused, so the block must
@@ -1019,7 +1119,7 @@ export function DayGrid({
 
       /* Undo a move by moving it back. Same operation, opposite sign, so
          there is no separate "restore" path to get wrong. */
-      setUndoMove({ visitId, shift: -shift });
+      setUndoMove({ visitId, shift: -totalShift });
     });
   }
 
@@ -1395,7 +1495,7 @@ export function DayGrid({
                      heading for another column before it is let go. */
                   const sideways =
                     isThisRow && !drag!.resizing && drag!.across !== 0
-                      ? drag!.across * 100
+                      ? drag!.across * drag!.columnWidth
                       : 0;
 
                   return (
@@ -1442,7 +1542,7 @@ export function DayGrid({
                         touchAction: brush || !canManage ? undefined : "none",
                         top: block.top + offset,
                         transform: sideways
-                          ? `translateX(${sideways}%)`
+                          ? `translateX(${sideways}px)`
                           : undefined,
                         height: Math.max(block.height + stretch, 14),
                         left: `calc(${block.lane * width}% + 2px)`,
