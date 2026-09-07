@@ -18,6 +18,102 @@ Newest entry at the top.
 
 ---
 
+## 2026-09-07 — Audit the whole thing, then fix what it found
+
+**Built:** An audit of the system against what commercial salon software does,
+then seven commits acting on it. The audit itself is **not in the repo** — it
+lives in a chat window and a hosted page, which is its own finding and is
+recorded below.
+
+**The one real bug, and it was everywhere.** Five screens built their day
+boundary as `new Date('2026-08-23T00:00:00')`. JavaScript reads a date-time
+carrying no offset as LOCAL time — the server's, not the salon's. Vercel runs
+UTC, so a New York salon's "23 August" was really 22 Aug 20:00 to 23 Aug 19:59.
+Every appointment starting after 8pm fell off its own day, last night's evening
+bookings appeared on this morning's grid, and nothing on screen said so because
+the grid draws to 22:00 either way. The receptionist would have seen an empty
+column, quoted the slot, and been refused by the exclusion constraint.
+
+`salonInstant()` already existed and already handled the two mornings a year the
+clocks move. The five places simply did not use it. `salonDayRange()` wraps it
+and is half-open — `[midnight, next midnight)` — matching the `tstzrange` the
+exclusion constraint already uses, so `.lte` became `.lt` at every call site.
+Proved by transpiling the real function and running it: the 23-hour and 25-hour
+days both come out right.
+
+**Layout faults share one shape, and this file already described it.** A grid
+ITEM's containing block is its own grid area, so a sticky element inside one can
+never travel outside its own cell. That was written up in `day-grid.tsx` in
+August, when the column headings were lifted into their own grid to fix it
+vertically. Nobody noticed the clock had the identical disease horizontally — it
+stuck for exactly its own 3.25rem of sideways scroll and then left. Each row is
+now a flex pair with the gutter as a sibling of the grid rather than a cell
+inside it.
+
+**A bug I introduced and then found two steps later.** The status key was
+rendered inside `DatePicker`, which was defensible while the calendar sprang
+open on every navigation. Teaching the calendar to stay folded turned that into
+"the only way to mark an appointment has permanently disappeared", because the
+folded calendar returns a date chip and nothing else. The key now has its own
+box, its own X and its own memory. Worth remembering as a shape: making one
+thing persistent can promote a temporary annoyance into a permanent fault.
+
+**Three faults in one gesture**, all reported as "it glitches a bit". The
+sideways drag preview used `translateX(across * 100%)` — a percentage of the
+ELEMENT, which is `calc(100%/lanes - 4px)` of a column, so one appointment slid
+four pixels short and two overlapping ones slid half a column. Nothing was
+clamped, so a block dragged left off the first stylist left the table entirely.
+And on the week view the day crossed was folded into the vertical shift, sending
+a block twenty-four hours down the grid on its way to tomorrow.
+
+**Four pixels is a mouse number.** Pressing a touchscreen and lifting off moves
+several pixels every time, from the contact patch changing shape — so tapping an
+appointment on a tablet moved it. Touch now needs twelve. Raising it alone would
+have traded one wrong move for another, because the block jumped by the whole
+threshold the instant it began following; recognition now re-anchors to where
+the pointer actually is.
+
+**`~/Documents` is iCloud-synced.** Confirmed by the symlink at
+`~/Library/Mobile Documents/com~apple~CloudDocs/Documents`. When Next rewrites a
+build file while iCloud holds a copy in flight, macOS writes `routes.d 2.ts`
+beside it, and tsconfig pulls `.next/types/**` into the programme — so tsc
+reported duplicate-identifier errors nobody wrote. Excluded by name. Nothing in
+`src/` or `supabase/` is duplicated today, checked; that it *could* be is the
+actual problem.
+
+**Broke / unresolved:** **Nothing has still been through a browser end to end.**
+Four things were confirmed by eye — the services search, the clock pinned left,
+the corner, the hour lines, the sideways drag — but there has been no walk
+through all eighteen routes as Owner, Receptionist and Stylist. That was the
+largest outstanding risk on 2026-08-22 and there are now ten more commits
+standing on it.
+
+`SCHEMA.md` has never heard of migrations 038–044 — two tables and five
+functions, including `set_appointment_status()`, the only path a status changes
+by, and `update_my_employee_details()`. Both are security boundaries.
+`ROADMAP.md` shows seven of Phase 5's nine steps unticked when they are built,
+and describes the who-does-what screen as read-only and riskless when it now
+inserts rows.
+
+The audit is not in version control. Every other piece of reasoning in this
+project is, precisely so it survives the session that produced it.
+
+`services.category` is read by nothing since `e680188` and is still in the
+table. The permission grid — which role holds which of the twelve keys — exists
+nowhere in the documents and has to be reconstructed by reading five migrations.
+
+Untouched from the audit's own P0 list: no customer search, no way to open an
+appointment and see its notes, no password reset, no rota drawn on the calendar
+so an empty column still cannot be told from an unstaffed one, and no production
+database.
+
+**Next:** The browser sweep — three logins, one pass, defects written down and
+only the blocking ones fixed in place. Then the P0 list in the order the audit
+set: actual timestamps, the appointment panel, customer search, the rota drawn,
+password reset, prod and a rehearsed restore.
+
+---
+
 ## 2026-08-22 (later) — The staff side, end to end
 
 **Built:** Phase 5 was eight unexplained checkboxes. It is now scoped in

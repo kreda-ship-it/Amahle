@@ -573,6 +573,77 @@ then no single scarce resource to anchor on.
 
 ---
 
+## 33. Moving a visit moves all of it — _2026-08-23, recorded 2026-09-07_
+**Decision:** `move_visit()` shifts every row of a visit by the same interval.
+Dragging a `lead` row carries its `finish` rows with it, at the same offset. A
+lead cannot be moved alone.
+**Why:** ROADMAP left this open — "move the whole visit, refuse to move a lead
+alone, or ask. Decide it with a real example on screen." It was then decided in
+code and never written down, which is how a deliberate choice becomes something
+nobody can defend later. Moving all of it is right: an assistant booked to work
+on hair the stylist has not released yet is not a schedule, it is a fault the
+calendar would be inventing.
+**Alternative rejected:** Asking on each drag. A dialogue on every gesture
+destroys the speed the gesture exists for, and the answer is the same every time.
+Also rejected: refusing the drag, which leaves the desk unable to do something
+ordinary.
+**Consequence accepted:** reassigning a founding *without* its finishing is a
+different gesture — `reassign_appointment()`, dragging sideways — rather than an
+option on this one.
+**Revisit when:** Somebody genuinely needs to move a founding and leave its
+finishing where it is. Nobody has asked in the life of the feature.
+
+## 34. A plan entry is one appointment, not one visit — _2026-08-23, recorded 2026-09-07_
+**Decision:** `schedule_plan_moves` is keyed on `appointment_id`. Migration 044
+dropped `visit_id` for it and added `target_employee_id`, `target_minutes`,
+`refused_reason` and a per-row `applied_at`.
+**Why:** Planning mode began as moves only, where a visit is the right grain.
+Then reassigning and resizing arrived, and both are facts about ONE row — "give
+Sara's braids to Maki" says nothing about the assistant finishing them. Keeping
+visit-grained moves beside appointment-grained edits would have meant two kinds
+of entry, two code paths in `apply_plan()`, and two things to keep in step.
+"The whole visit moves" is then expressed as what it actually is: one entry per
+row, each keeping its own offset, so the shape of the visit survives.
+**Alternative rejected:** Two tables, or a nullable `visit_id` beside
+`appointment_id`. Both encode the same fact twice and let them disagree.
+**Revisit when:** Never expected. The grain matches the grain of the operations.
+
+## 35. The production split happens before handover, not at the first real customer record — _2026-09-07_
+**Decision:** DECISIONS #18's trigger is replaced. The dev/prod split is a
+scheduled step immediately before the salon is trained, rather than a condition
+watched for.
+**Why:** #18 says the split must "already exist" by the time real data arrives,
+and it is right about that. But the first real customer record arrives DURING
+training — a staff member entering a genuine booking to learn the form. The
+trigger fires after the moment it needed to have already fired. #18 was correct
+about the danger and wrong about the timing, and it says itself that this is
+"the one entry in this file with a trigger that will arrive without announcing
+itself".
+**Alternative rejected:** Keep the trigger and watch for it. Rejected because
+watching for something that arrives silently, during the one session where
+everybody's attention is on the people rather than the database, is not a plan.
+**Unchanged from #18:** the current project becomes prod and the new one becomes
+dev, not the other way round; rename it off "Salon dev", since that name is the
+only warning label the database carries; stop running experiments against it
+from that moment. Add one thing: **restore a backup once, on purpose, before
+handover.** The only rollback that matters is the one you have already done.
+**Revisit when:** Never.
+
+## 36. `services.category` is dropped — _2026-09-07_
+**Decision:** The text column goes, in its own migration, after the category
+tree has run in production for one full week.
+**Why:** Commit e680188 moved every page onto `category_id`. The column is now
+read by nothing and written only by seed scripts. Two sources of truth for "what
+kind of thing is this" is exactly what migration 027 set out to end — and it had
+already caused the fault e680188 fixed, where sixty of eighty-four services
+carried `category = null` and every page printed them under a heading called
+"More" while `category_id` sat filled in correctly and read by nobody.
+**Alternative rejected:** Drop it in the same commit that moved the pages.
+Rejected because a column dropped is a column you cannot check against when the
+new grouping looks wrong on a real menu, and the menu had never been seen
+grouped the new way.
+**Revisit when:** After a week of the tree being live. Then it is one migration.
+
 ## Template for new entries
 
 ```

@@ -472,7 +472,8 @@ offers and the database refuses.
 - [x] **Stylist sees only their own schedule; owner sees all** — same mechanism,
       same commit. Row-level, not screen-level
 
-- [ ] **1. The shell.** Layout, permission-gated navigation, identity, sign out
+- [x] **1. The shell** — 2026-08-22, commit aee9d14.
+      Originally: Layout, permission-gated navigation, identity, sign out
       on every page rather than on one. Nothing to demo, and everything after it
       needs somewhere to live. It will look sparse until step 2 exists to link
       to, which is a reason to keep it small, not a reason to skip it
@@ -480,14 +481,17 @@ offers and the database refuses.
       dropped you on the shopfront and you had to find the footer link and click
       it again. Two lines. Signing *out* still goes to `/`, which is right
 
-- [ ] **2. Manual appointment entry.** The dense one-screen form for phone
+- [x] **2. Manual appointment entry** — 2026-08-22, commits 6eacd62,
+      92b9e5e, 44a3dc3. `/staff/book`. Originally: The dense one-screen form for phone
       bookings. PROJECT.md calls this the feature that decides whether the
       project survives contact with reality. It is also what finally connects
       the booking engine built on 2026-08-22 — the service tree, lead and finish
       rows, two-person visits — to a human being, because nothing customer-facing
       calls any of it yet
 
-- [ ] **3. Status changes, colours, and the highlighter.** Requested 2026-08-22
+- [x] **3. Status changes, colours, and the highlighter** — migration 042,
+      commit bde423f. **Soft-delete has no UI**: `softDeleteAppointment()` in
+      `staff/actions.ts` is called by nothing. Originally: Requested 2026-08-22
       - Every appointment sits at `pending` today because nothing in the system
         can move it. This is the step that unsticks them
       - **A colour per status**, all eight, in a key down the side
@@ -523,14 +527,34 @@ offers and the database refuses.
         trigger is **not built and not in v1** — noted so the hook is designed
         for, not so it is scaffolded
 
-- [ ] **4. Who can do this hair?** Read-only, and the cheapest useful thing in
+- [x] **4. Who can do this hair?** — 2026-08-22 read-only, commit d1c6969;
+      **made editable 2026-08-23, commit 834411b.**
+      **The description below is no longer true and is kept for the record.**
+      It said "no writes, no risk"; the screen now inserts into
+      `employee_services`. No migration was needed — every grant and policy has
+      been in place since migration 014, and 033 added `role`. Ticking a box
+      moves five things nowhere near that screen: `get_visit_slots`,
+      `create_appointment`, the staff entry form's stylist list, the public
+      team page, and which columns the calendar draws.
+      Originally: Read-only, and the cheapest useful thing in
       the phase. `employee_services` already knows who leads and who assists each
       service, from Selam's matrix. Tap a service and everyone who can take it is
       highlighted; drag a customer onto somebody who cannot and the screen says
       so before the drop. No new tables, no writes, no risk — and it is half of
       what was asked for under "planning mode" without any of the machinery
 
-- [ ] **5. Live editing.** Drag to move, drag an edge to change length, tap empty
+- [~] **5. Live editing — two of four built.**
+      **Done:** drag to move (commit 1c77b2f, migration 039), drag sideways to
+      reassign and drag the edge to resize (commit 7949a11, migration 041).
+      Hardened 2026-09-07, commit 6da6b91 — see the entry at the foot of this
+      phase.
+      **Not built:** tap empty space to book there, and cancel.
+      **The open question below was answered in code and never written down.**
+      `move_visit()` moves the whole visit: dragging a `lead` row carries its
+      `finish` rows at the same offset, and a lead cannot be moved alone. An
+      assistant booked to work on hair the stylist has not released is not a
+      schedule. Needs a DECISIONS entry.
+      Originally: Drag to move, drag an edge to change length, tap empty
       space to book there, cancel. The database validates on drop and refuses
       anything illegal, which is correct — the design question is only what the
       screen does at that moment. Snap back with a reason, and offer the nearest
@@ -542,7 +566,8 @@ offers and the database refuses.
         created this shape and no screen has ever had to move one. Decide it with
         a real example on screen, not in advance
 
-- [ ] **6. Planning mode.** Requested 2026-08-22. The same calendar in a second
+- [x] **6. Planning mode** — migrations 040 and 044, commits 87d7f44,
+      383a2ee. Originally: Requested 2026-08-22. The same calendar in a second
       mode, not a second calendar — two copies of the hardest UI in the app would
       drift, and a planner that disagrees with the real calendar is worse than no
       planner
@@ -587,15 +612,16 @@ offers and the database refuses.
         reassignments only. A sketched-in walk-in holds no slot, so two people
         can plan the same gap and both be told it is fine
 
-- [ ] **7. Week view.**
+- [x] **7. Week view** — commit c07e705. One person at a time; a whole-salon
+      week is not built.
 
-- [ ] **8. Tomorrow's calls.** Tomorrow's appointments as a list, with
+- [x] **8. Tomorrow's calls** — commit e6d7ae6. Originally: Tomorrow's appointments as a list, with
       tap-to-call and tap-to-text on each and a confirmed toggle. No
       infrastructure, no provider, no compliance — and it is how the salon
       already works, except the list makes itself. This is what DECISIONS #29
       means in practice: the salon confirms by hand, the system records it
 
-- [ ] **9. My profile.** Small, and can be pulled forward whenever it is wanted.
+- [x] **9. My profile** — migration 042, commit 8afa482. Originally: Small, and can be pulled forward whenever it is wanted.
       A person's own details, their own week, their own time off
       - **A stylist may edit their own details** — decided 2026-08-22. Phone,
         email, bio, photo. Not `position`, not `display_order`, not
@@ -613,6 +639,104 @@ system, out, and it was asked for on 2026-08-22 and declined for that reason.
 Automated messages to customers — DECISIONS #29, and step 8 is the version that
 needs nothing.
 
+### The 2026-09-07 audit, and what it left behind
+
+The staff area was audited against what commercial salon software does. Seven
+commits acted on it the same day; the rest is below, and it is now the real
+build order — ahead of the rest of Phase 6, because a salon cannot open the
+doors without most of it.
+
+**Fixed on the day.** The day boundary was computed in the SERVER's timezone,
+so on Vercel every appointment after 8pm fell off its own day and nothing on
+screen said so (69bfccb). The dashboard was the only appointment query with no
+`deleted_at` filter, so it disagreed with the day view (69bfccb). The mobile
+drawer showed single letters because the desktop collapse leaked into it, and
+the calendar's own headings painted over it because both sat at z-30 (ecf9b01).
+The calendar forgot it was folded, and the status key was trapped inside it
+(a346ea7). The clock could not stay put on a sideways scroll — a grid item
+cannot slide outside its own cell, the same fault the headings had in August,
+one axis over (6e4c046). A dragged block slid four pixels short of its column,
+left the table entirely at the edges, and dropped twenty-four hours down the
+week view on its way to tomorrow (6da6b91). A four-pixel drag threshold is a
+mouse number, so tapping an appointment on a tablet moved it (6da6b91).
+
+**P0 — the salon cannot open the doors without these.**
+
+- [ ] **The browser sweep.** Eighteen routes, three logins — Owner,
+      Receptionist, Stylist. **Nothing in the staff area has ever been walked
+      through end to end**, and there are now ten commits standing on that.
+      Two sessions. Everything below is an estimate until this happens
+- [ ] **Deploy to Vercel and set the real domain.** Phase 0's last unticked box
+- [ ] **Password reset.** There is none. A receptionist locked out on a
+      Saturday cannot get back in without somebody opening the Supabase
+      dashboard. Inside `/lib/auth` only, per DECISIONS #6
+- [ ] **Find a customer.** Partial name or partial phone, from the shell. The
+      most-used front-desk action in any salon and there is no search anywhere
+      in the app. `lookUpCustomer` matches a full number only
+- [ ] **The customer record.** List, detail, visit history, care notes and
+      flags rendered per permission. Where DECISIONS #27's machinery finally
+      reaches a screen. The last real blocker to handover
+- [ ] **Prod, and a restore that has actually been done.** See the note under
+      the launch checklist: DECISIONS #18's trigger fires DURING training,
+      which is after the split needed to already exist
+
+**P1 — it will break, embarrass us, or lose data in week one.**
+
+- [ ] **Actual timestamps** — `checked_in_at`, `started_at`, `completed_at`,
+      written by `set_appointment_status()`, which is already the only path a
+      status changes by. Three nullable columns, no new table. **The only item
+      here that cannot be backfilled**: every day without it is a day of "the
+      90-minute service actually took 115" that is gone. Those rows are what
+      later make durations self-tuning and utilisation measurable, and they are
+      what DECISIONS #12 and #29 are waiting on
+- [ ] **Open an appointment.** `notes` is fetched by the day, week and plan
+      queries and rendered nowhere; clicking a block with no brush does nothing
+      at all. A panel is also where cancel, reschedule and "open the customer"
+      belong, so building it stops four features each inventing their own way in
+- [ ] **Cancel, and say why** — `cancelled_at`, `cancelled_by`,
+      `cancellation_reason`. `audit_log` holds the change but not in a shape
+      anyone can query, and DECISIONS #12 defers deposits until cancellations
+      are "a measured problem"
+- [ ] **Draw the rota on the grid.** An empty column currently cannot be told
+      apart from a stylist who is not in the building. The tables have existed
+      since migration 013 and no screen reads them
+- [ ] **Rate-limit the public booking path.** `hold_slot()` and
+      `create_appointment()` are granted to `anon` — correct and required — and
+      nothing limits how often either is called. A loop in a browser console
+      can hold every slot in the salon, fifteen minutes at a time, and the
+      salon's only symptom is a phone that stops ringing
+- [ ] **Narrow the status key to what each person may set.** A stylist is shown
+      all eight and the database refuses four of them
+- [ ] **Live refresh.** Every calendar page is `force-dynamic` and then never
+      updates again. Two tablets show two different days within minutes
+- [ ] **Organization closures.** A public holiday is currently one
+      `employee_time_off` row per person, and the one you forget takes bookings
+- [ ] **The day on paper.** A print stylesheet. The salon is coming off paper;
+      the first wifi outage without this and they go back to it for good
+- [ ] **Teach `audit-tenant-safety.sql` about `appointment_holds`,
+      `schedule_plans` and `schedule_plan_moves`.** The script that proves the
+      tenant boundary is three tables behind
+- [ ] **A minimal automated test suite.** There is none — `package.json` has
+      dev, build, start, lint. All testing is four SQL scripts run by hand
+
+**P2 — promoted into v1 deliberately, with the delay stated.**
+
+- [ ] **The rota editor** (1 session). Without it every rota change is SQL, and
+      the rota is the input to every availability answer in the system
+- [ ] **Organization settings** (1 session). Seven scheduling dials —
+      `slot_step_minutes`, `booking_lead_time_hours`, `hold_minutes`,
+      `max_overhang_minutes` and three more — are `UPDATE` statements today, and
+      week one is exactly when they need turning
+- [ ] **Enforce `do_not_book_online`.** `customer_flags` exists with the right
+      shape and `create_appointment()` never reads it, so the flag has no
+      effect at all — worse than not having it, because somebody will set it
+
+**Refused for v1, on the scope gate, and recorded so the refusal is a decision.**
+Segmented services (the biggest capability gap, three to four sessions, never
+asked for) · resources with capacity · waitlist · rebook prompt · deposits ·
+SMS reminders · customer self-service cancel · per-employee durations. All are
+in "After v1" below.
+
 ### Phase 6 — Records and permissions
 - [ ] Customer list and detail view
 - [ ] Customer history (past appointments)
@@ -626,7 +750,10 @@ needs nothing.
 - [ ] Employee list and profiles
 - [ ] Working hours and availability management
 - [ ] Roles and permissions management UI
-- [ ] **The service menu editor** — added 2026-08-22, and it was missing from
+- [x] **The service menu editor** — commit c44c82c, 2026-08-22. Name, price,
+      duration, buffer, lead time, latest booking, active. Search added
+      2026-09-07, commit 9bbe09f. The service TREE — categories, questions,
+      answers — is still not editable. Originally: — added 2026-08-22, and it was missing from
       this phase entirely. Name, price, duration, buffer, lead time, latest
       booking, active. Behind `service.manage`, so Owner and Manager by default.
       This is the item with the most immediate cost attached to *not* having it:
@@ -636,7 +763,7 @@ needs nothing.
 - [ ] **The service tree editor** — categories, questions, and answers with
       their price and minute deltas. Same key. Adding a hairstyle, or a new
       answer to "how long?", should not be a migration
-- [ ] **The stylist matrix** — who leads and who assists which service. The data
+- [x] **The stylist matrix** — commit 834411b, 2026-08-23. Originally: — who leads and who assists which service. The data
       is `employee_services` and is already seeded from Selam's sheet; two cells
       in it are still guesses waiting on her, which is exactly the kind of thing
       a screen fixes in ten seconds and a script does not

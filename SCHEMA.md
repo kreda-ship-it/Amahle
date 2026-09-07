@@ -890,6 +890,151 @@ there is none.
 numbers are stored as bare digits and will not match the same number written
 internationally. It is tenant data, so no migration writes it.
 
+## Changing an appointment after it exists — migrations 038 to 044
+
+Everything in this section was built on 2026-08-23 and was missing from this
+document until 2026-09-07. Two tables and five functions, several of them
+security boundaries.
+
+### set_appointment_status — the only way a status changes
+
+Migration 042. Replaces a direct `update` from application code, which was
+correct and became insufficient.
+
+`appointments_update` requires `appointment.manage`. A Stylist does not hold it
+and should not — it also permits rescheduling and cancelling anybody's booking.
+But a stylist marking her own client arrived is obviously reasonable, and that
+rule **cannot be written as a policy at all**: `has_permission()` answers "may
+this ROLE do this", and the question here is "may this PERSON do this, to THIS
+row".
+
+| Caller | May set |
+|---|---|
+| Holds `appointment.manage` | any status, on any appointment |
+| The employee the row belongs to | `checked_in`, `in_progress`, `completed`, `no_show` |
+| Anyone else | nothing |
+
+`cancelled` is deliberately not on the second list — a cancellation has a
+customer on the other end of it and belongs with the desk. Nor is `confirmed`,
+which is the day-before call round.
+
+`security definer`, granted to `authenticated` only. It is the **only** path, not
+a second one beside the update — so a stylist marking her own client done and a
+receptionist cancelling a booking travel the same code and audit identically.
+
+### update_my_employee_details — your own contact details
+
+Migration 042. `employee.record.manage` governs the whole roster and is
+all-or-nothing, so a stylist could not correct her own phone number without an
+owner doing it.
+
+**The column list is the entire security model**, which is why this is a function
+with four named parameters rather than a policy over the row: `phone`, `email`,
+`bio`, `photo_path`. Not `position` (a job title belongs to whoever decides job
+titles), not `display_order`, and not `is_bookable` or `is_active` — a stylist
+quietly taking herself off the roster on a Saturday morning is not a feature.
+`full_name` is left out too: it is how the salon refers to somebody across every
+customer record, and a rename is something the desk should know about.
+
+Null means "leave alone"; an empty string clears.
+
+### move_visit, reassign_appointment, resize_appointment
+
+Migrations 039 and 041. The three ways a booking changes shape once it exists.
+
+| Function | Grain | What it does |
+|---|---|---|
+| `move_visit(visit, starts_at)` | the whole visit | Shifts every row by the same interval, so a founding and its finishing stay together |
+| `reassign_appointment(appointment, employee, starts_at)` | one row | Gives one piece of work to somebody else. Refuses anyone who does not perform that service in that capacity — a `lead` row needs a lead, a `finish` row needs an assistant |
+| `resize_appointment(appointment, ends_at)` | one row | Changes a length. Whatever follows it in the same visit shifts with it |
+
+**The whole visit always moves, and that answers an open question.** Dragging a
+`lead` row carries its `finish` rows at the same offset; a lead cannot be moved
+alone. An assistant booked to work on hair the stylist has not released yet is
+not a schedule, it is a fault.
+
+**`appointments_no_double_booking` became `deferrable` for this.** Shifting a
+chained visit trips the constraint mid-statement on a final state that is
+perfectly legal, so the check is deferred to commit. Same SQLSTATE `23P01`, same
+meaning to the caller — it simply arrives at commit rather than at the statement.
+
+### schedule_plans and schedule_plan_moves
+
+Migrations 040 and 044. Planning mode: proposed changes over the live calendar,
+which change nothing until they are applied.
+
+`schedule_plans` — `name`, `plan_date`, `created_by`, `applied_at`. A plan
+belongs to a date and has a name, which is what makes "Thursday" and "Thursday,
+if Fikir is out" two tabs rather than a feature. `applied_at` is set once Apply
+succeeds: an applied plan is history, not a draft, and applying twice would move
+everything again.
+
+`schedule_plan_moves` — one row per proposed change:
+
+| Column | Meaning |
+|---|---|
+| `appointment_id` | Which row moves. **Not `visit_id`** — migration 044 changed the grain |
+| `target_starts_at` | Absolute, never an interval |
+| `target_employee_id` | Null leaves the person alone |
+| `target_minutes` | Null leaves the length alone |
+| `refused_reason` | Why the database would not take it, kept rather than dropped |
+| `applied_at` | Set per row when Apply lands it |
+
+**The plan stores changes, not a copy of the day.** This is the choice that makes
+everything else free: a booking taken while a plan is open simply shows through,
+because the plan was never holding its own copy of Thursday to fall out of step
+with. There is nothing to sync.
+
+**The target is absolute rather than an interval**, so "already done" is
+expressible — somebody who moved the visit by hand since leaves a proposal that
+shrinks to nothing rather than applying a second time.
+
+**Migration 044 moved the grain from visit to appointment**, because reassigning
+and resizing are facts about one row and keeping two kinds of entry would have
+meant two code paths. Unique per `(plan_id, appointment_id)` among live rows:
+dragging the same block twice is a correction, not a second instruction.
+
+`apply_plan(plan)` is **one transaction, deliberately**. A plan built at ten and
+applied at twenty past may be stale, and a half-applied plan leaves a day that is
+neither its old shape nor its new one with nobody knowing which. Its refusals are
+`raise exception` written to be read by the person at the desk, so the caller
+passes the message straight through.
+
+**A plan reserves nothing.** It is not an appointment, holds no slot and blocks
+nobody. Two people can plan the same gap and both be told it is fine; the second
+Apply is the one refused.
+
+## Who holds which permission
+
+Twelve keys, four roles. This grid is what `create_organization()` seeds and
+what migrations 007, 008, 012 and 014 backfilled. It is **starting data, not a
+fixed rule** — permissions are rows, and an owner changes who holds what.
+
+| Permission | Owner | Manager | Receptionist | Stylist |
+|---|:--:|:--:|:--:|:--:|
+| `appointment.view_all` | yes | yes | yes | — |
+| `appointment.create` | yes | yes | yes | — |
+| `appointment.manage` | yes | yes | yes | — |
+| `customer.view` | yes | yes | yes | yes |
+| `customer.manage` | yes | yes | yes | — |
+| `customer.view_sensitive` | yes | yes | **—** | **yes** |
+| `customer.view_financial` | yes | yes | yes | **—** |
+| `employee.manage` | yes | yes | — | — |
+| `employee.record.manage` | yes | yes | — | — |
+| `service.manage` | yes | yes | — | — |
+| `organization.edit` | yes | — | — | — |
+| `role.manage` | yes | — | — | — |
+
+The two emphasised rows are DECISIONS #9 working: **a stylist sees a customer's
+allergies and not their outstanding balance; a receptionist sees the balance and
+not the allergies.**
+
+**A Stylist holds no appointment permission at all**, and this is the single
+easiest thing in the schema to misread. Her access to the calendar is
+row-level, through `appointments_select` — `appointment.view_all OR employee_id
+= current_employee_id()`. So a stylist gets her own column and a receptionist
+the whole salon out of identical code, with no role check on any screen.
+
 ## audit_log
 
 Every meaningful action. Append-only. Never updated, never deleted — no
