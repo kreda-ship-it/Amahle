@@ -655,12 +655,31 @@ export function DayGrid({
   const gridHeight = ((DAY_END - DAY_START) / 60) * pxPerHour;
 
   /*
-   * Shared by the heading grid and the body grid, which have to agree column
-   * for column. Columns take whatever room there is and stop shrinking at
-   * 8.5rem, so four stylists fill a laptop and twelve overflow into a
-   * sideways scroll.
+   * THE CLOCK IS NO LONGER A COLUMN OF THE GRID, and that is what lets it stay
+   * put when the pane scrolls sideways.
+   *
+   * It used to be the first track, carrying `sticky left-0`. A grid ITEM's
+   * containing block is its own grid area, and a sticky element can never
+   * travel outside its containing block — so the clock stuck for exactly its
+   * own 3.25rem and then left with everything else. Precisely the fault the
+   * headings had, written up below, one axis over.
+   *
+   * So each row is now a flex pair: a gutter that is a sibling of the grid
+   * rather than a cell inside it, and the columns. A flex item's containing
+   * block is the flex line, which spans the whole scrollable width — so
+   * `sticky left-0` has somewhere to travel.
+   *
+   * WHY THE WIDTH IS STATED RATHER THAN LEFT TO max-content. The heading row
+   * and the body row must agree column for column, and two rows sized by
+   * their own contents would not: a long stylist name would widen one of
+   * them. `max(100%, …)` gives both the same answer — fill the pane when
+   * there is room, and overflow to a sideways scroll when there is not.
    */
-  const template = `3.25rem repeat(${columns.length}, minmax(8.5rem, 1fr))`;
+  const GUTTER = "3.25rem";
+  const MIN_COLUMN = "8.5rem";
+
+  const columnsTemplate = `repeat(${columns.length}, minmax(${MIN_COLUMN}, 1fr))`;
+  const rowWidth = `max(100%, calc(${GUTTER} + ${columns.length} * ${MIN_COLUMN}))`;
 
   const heads = columns;
 
@@ -768,8 +787,10 @@ export function DayGrid({
     let across = 0;
 
     if (!drag.resizing && gridRef.current) {
+      /* gridRef now holds the COLUMNS ONLY — the gutter is its sibling, not
+         its first track — so there is no longer 52px of clock to subtract. */
       const columnWidth =
-        (gridRef.current.clientWidth - 52) / Math.max(columns.length, 1);
+        gridRef.current.clientWidth / Math.max(columns.length, 1);
 
       if (columnWidth > 0) {
         const crossed = Math.round(dx / columnWidth);
@@ -1180,10 +1201,12 @@ export function DayGrid({
             row is one row tall, so the cells stuck for exactly their own
             height and then left with everything else.
 
-            Lifting the headings into their own grid makes them a direct child
-            of the scrolling pane instead, and a direct child's containing
-            block is the pane. Identical `gridTemplateColumns` on both keeps
-            the two in step, which is why the template is computed once above.
+            Lifting the headings out makes them a direct child of the
+            scrolling pane instead, and a direct child's containing block is
+            the pane. The same fix the clock needed one axis over — see the
+            note on GUTTER above. Both rows take an identical `rowWidth` and
+            an identical `columnsTemplate`, which is what keeps them in step
+            column for column, and is why each is computed once above.
           */}
           {/* z-30 IS THE CEILING FOR ANYTHING INSIDE A SCREEN. The staff
               shell's drawer and its dimmer sit at z-50 and z-40, so a sticky
@@ -1191,32 +1214,47 @@ export function DayGrid({
               what happened when both were z-30 and this one won on document
               order. Do not raise this number; raise the shell's. */}
           <div
-            className="sticky top-0 z-30 grid bg-surface"
-            style={{ gridTemplateColumns: template }}
+            className="sticky top-0 z-30 flex bg-surface"
+            style={{ width: rowWidth }}
           >
-            <div className="border-r border-b border-line" />
+            {/* The corner, sticky on BOTH axes. It is the one cell that has to
+                hold still whichever way you scroll — without it the clock
+                slides out from underneath its own heading row. */}
+            <div
+              className="sticky left-0 shrink-0 border-r border-b border-line bg-surface"
+              style={{ width: GUTTER }}
+            />
 
-            {heads.map((head) => (
-              <div
-                key={head.id}
-                className="truncate border-r border-b border-line px-2 py-2 text-center text-sm font-medium last:border-r-0"
-                title={head.label}
-              >
-                {head.label}
-              </div>
-            ))}
+            <div
+              className="grid min-w-0 grow"
+              style={{ gridTemplateColumns: columnsTemplate }}
+            >
+              {heads.map((head) => (
+                <div
+                  key={head.id}
+                  className="truncate border-r border-b border-line px-2 py-2 text-center text-sm font-medium last:border-r-0"
+                  title={head.label}
+                >
+                  {head.label}
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div
-            ref={gridRef}
-            className="grid"
-            style={{ gridTemplateColumns: template }}
-          >
+          <div className="flex" style={{ width: rowWidth }}>
 
-            {/* The clock, which stays put as the pane scrolls sideways. */}
+            {/*
+              The clock. A sibling of the columns rather than a track inside
+              them, which is the whole of the fix — see the note on GUTTER.
+
+              z-20 puts it over the blocks (z-10) so a booking dragged left
+              passes UNDER the hours rather than over them, and still under
+              the heading row at z-30. `sticky` is also what makes it the
+              containing block for the absolutely-placed hour labels.
+            */}
             <div
-              className="sticky left-0 z-10 border-r border-line bg-surface"
-              style={{ height: gridHeight }}
+              className="sticky left-0 z-20 shrink-0 border-r border-line bg-surface"
+              style={{ width: GUTTER, height: gridHeight }}
             >
               {hours.map((minute) => (
                 <span
@@ -1228,6 +1266,12 @@ export function DayGrid({
                 </span>
               ))}
             </div>
+
+            <div
+              ref={gridRef}
+              className="grid min-w-0 grow"
+              style={{ gridTemplateColumns: columnsTemplate }}
+            >
 
             {heads.map((head) => (
               <div
@@ -1541,6 +1585,7 @@ export function DayGrid({
                   })}
               </div>
             ))}
+            </div>
           </div>
         </div>
       )}
