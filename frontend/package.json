@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db": "supabase --workdir ../backend",
+    "db:new": "supabase migration new --workdir ../backend",
+    "db:push": "supabase db push --workdir ../backend",
+    "db:types": "supabase gen types typescript --linked --schema public --workdir ../backend > src/lib/supabase/database.types.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

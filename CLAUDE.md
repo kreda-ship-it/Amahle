@@ -1,7 +1,17 @@
 # CLAUDE.md — Amahle
 
-**Read PROJECT.md before your first response in any session.** It explains what
-this app is, who it's for, and why the architecture is the way it is.
+**Read docs/PROJECT.md before your first response in any session.** It explains
+what this app is, who it's for, and why the architecture is the way it is.
+
+## Where things live
+
+- `frontend/` — the Next.js app: public site, staff app, and its server code
+  (`src/app` for pages and server actions, `src/lib` for shared logic). Run
+  `npm` commands from here.
+- `backend/supabase/` — the database: `migrations/` (schema history, applied
+  with `npm run db:push`) and `scripts/` (seeds, fixes and SQL tests).
+- `docs/` — every document named below (PROJECT, ROADMAP, DECISIONS, SCHEMA,
+  GLOSSARY, SESSION_LOG, CHEATSHEET).
 
 ---
 

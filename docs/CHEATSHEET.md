@@ -70,10 +70,10 @@ This is the one you'll do every single session.
 
 **1. Open Terminal.**
 
-**2. Go to the project folder.**
+**2. Go to the app folder.**
 
 ```bash
-cd "/Users/kalkidanreda/Documents/Salon System "
+cd "/Users/kalkidanreda/Documents/Salon System /frontend"
 ```
 
 The quotes are not optional. This folder's name has spaces in it — **including
@@ -83,8 +83,10 @@ separate words and says `no such file or directory`.
 Easier way: type `cd ` (with a space), then drag the project folder from Finder
 onto the Terminal window. It fills in the path correctly. Press Enter.
 
-To check you're in the right place, run `pwd`. It should print the project
-folder.
+Then type `cd frontend`. Every `npm` and Supabase command in this cheatsheet
+runs from inside `frontend/` — that's where `package.json` lives.
+
+To check you're in the right place, run `pwd`. It should end in `/frontend`.
 
 **3. Start the site.**
 
@@ -120,6 +122,7 @@ browser, it's already updated. You don't restart anything.
 | What you see | What it means |
 |---|---|
 | `no such file or directory` | Step 2 — you're not in the project folder, or the quotes are missing |
+| `Missing script: "dev"` | You're in the project folder but not inside `frontend/`. Run `cd frontend` |
 | `command not found: npm` | Node isn't installed, or this is a fresh computer |
 | `Cannot find module` | Run `npm install`, then try again. Needed after a fresh clone or a `git pull` that changed `package.json` |
 | `Port 3000 is in use` | See below — it's already running somewhere |
@@ -174,23 +177,28 @@ start it again. The error means nothing — don't go looking for a bug.
 
 Environment variables live in `.env.local`, which is **never committed**.
 
-### Always type `npx` in front
+### Always go through `npm run db`
 
-Supabase is installed inside this project, not on your whole computer. Plain
-`supabase db push` gives you `command not found`. It is always:
+Supabase is installed inside `frontend/`, but the database files live in
+`backend/supabase/`. The `db` shortcuts in `package.json` point Supabase at the
+right folder for you. Run them from `frontend/`:
 
 ```bash
-npx supabase <command>
+npm run db -- <command>
 ```
+
+The `--` is needed: it tells npm that what follows belongs to Supabase, not to
+npm. Plain `npx supabase ...` from `frontend/` will say it can't find the
+project, because it looks for a `supabase/` folder right where you are.
 
 ### The commands
 
 ```bash
-npx supabase projects list               # which projects exist, and which one is linked
-npx supabase migration list              # what's applied here vs on the server
-npx supabase migration new name_of_it    # create an empty migration file
-npx supabase db push                     # apply migrations to the linked project
-npx supabase db reset                    # wipe and rebuild — DEV ONLY
+npm run db -- projects list              # which projects exist, and which one is linked
+npm run db -- migration list             # what's applied here vs on the server
+npm run db:new -- name_of_it             # create an empty migration file
+npm run db:push                          # apply migrations to the linked project
+npm run db -- db reset                   # wipe and rebuild — DEV ONLY
 ```
 
 `projects list` prints `"linked":true` next to the project you are pointed at.
@@ -211,17 +219,17 @@ A migration is the one thing that is genuinely hard to undo.
 **2. Create the file**
 
 ```bash
-npx supabase migration new what_it_does
+npm run db:new -- what_it_does
 ```
 
-This makes an empty file in `supabase/migrations/` with a timestamp in front.
+This makes an empty file in `backend/supabase/migrations/` with a timestamp in front.
 The timestamp is how Postgres knows what order to run them in — never rename
 one.
 
 **3. Apply it**
 
 ```bash
-npx supabase db push
+npm run db:push
 ```
 
 Migrations go through `db push`. **Never paste a migration into the dashboard's
@@ -232,7 +240,7 @@ through `db push`.
 **4. Regenerate the types — do not skip this**
 
 ```bash
-npx supabase gen types typescript --linked --schema public > src/lib/supabase/database.types.ts
+npm run db:types
 ```
 
 This file tells TypeScript what every table and column is called. If you skip
@@ -241,10 +249,10 @@ tell you a column is fine when it isn't.
 
 **5. Prove nothing leaked.** Open the SQL editor in the dashboard and run both:
 
-- `supabase/scripts/test-tenant-isolation.sql` — one salon must not see
+- `backend/supabase/scripts/test-tenant-isolation.sql` — one salon must not see
   another's rows. The numbers to expect are written at the top of the file, and
   they change as tables are added. **If they don't match, stop and ask.**
-- `supabase/scripts/audit-tenant-safety.sql` — asks the database which tables
+- `backend/supabase/scripts/audit-tenant-safety.sql` — asks the database which tables
   break the rules. **No rows means clean.** It found three real problems the
   first time it ran.
 
@@ -265,9 +273,9 @@ Photo files live in a Supabase bucket called `site-images`. The database only
 stores the *path* to a photo, never a full web address.
 
 ```bash
-npx supabase storage ls --experimental                    # list buckets
-npx supabase storage ls "ss:///site-images/" --linked --experimental
-npx supabase storage cp ./photo.jpg "ss:///site-images/hero.jpg" --linked --experimental
+npm run db -- storage ls --experimental                   # list buckets
+npm run db -- storage ls "ss:///site-images/" --linked --experimental
+npm run db -- storage cp ./photo.jpg "ss:///site-images/hero.jpg" --linked --experimental
 ```
 
 Two things the terminal **cannot** do, both dashboard jobs:
